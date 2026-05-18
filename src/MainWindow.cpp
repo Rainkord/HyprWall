@@ -64,25 +64,25 @@ protected:
             return;
         }
         int mnX=INT_MAX,mnY=INT_MAX,mxX=INT_MIN,mxY=INT_MIN;
-        for (auto &m:m_monitors) { mnX=std::min(mnX,m.x); mnY=std::min(mnY,m.y); mxX=std::max(mxX,m.x+m.width); mxY=std::max(mxY,m.y+m.height); }
-        int tW=mxX-mnX, tH=mxY-mnY; if(!tW||!tH) return;
+        for (auto &m:m_monitors){mnX=std::min(mnX,m.x);mnY=std::min(mnY,m.y);mxX=std::max(mxX,m.x+m.width);mxY=std::max(mxY,m.y+m.height);}
+        int tW=mxX-mnX,tH=mxY-mnY; if(!tW||!tH) return;
         const int P=14;
-        int aW=width()-2*P, aH=height()-2*P;
+        int aW=width()-2*P,aH=height()-2*P;
         double sc=std::min((double)aW/tW,(double)aH/tH);
-        int oX=P+(aW-(int)(tW*sc))/2, oY=P+(aH-(int)(tH*sc))/2;
-        for (auto &m:m_monitors) {
-            int rx=oX+(int)((m.x-mnX)*sc), ry=oY+(int)((m.y-mnY)*sc);
-            int rw=std::max(6,(int)(m.width*sc)), rh=std::max(6,(int)(m.height*sc));
+        int oX=P+(aW-(int)(tW*sc))/2,oY=P+(aH-(int)(tH*sc))/2;
+        for (auto &m:m_monitors){
+            int rx=oX+(int)((m.x-mnX)*sc),ry=oY+(int)((m.y-mnY)*sc);
+            int rw=std::max(6,(int)(m.width*sc)),rh=std::max(6,(int)(m.height*sc));
             QRect r(rx,ry,rw,rh); bool sel=(m.name==m_selected);
             if (m_pixmaps.contains(m.name))
                 p.drawPixmap(r,m_pixmaps[m.name].scaled(r.size(),Qt::KeepAspectRatioByExpanding,Qt::SmoothTransformation));
             else if (m_wallpapers.contains(m.name)&&WallpaperApplier::isVideoFile(m_wallpapers[m.name]))
-                { p.fillRect(r,QColor(30,20,50)); p.setPen(QColor(180,120,255)); QFont f=p.font(); f.setPointSize(14); p.setFont(f); p.drawText(r,Qt::AlignCenter,">"); }
+                {p.fillRect(r,QColor(30,20,50));p.setPen(QColor(180,120,255));QFont f=p.font();f.setPointSize(14);p.setFont(f);p.drawText(r,Qt::AlignCenter,">");}
             else p.fillRect(r,QColor(35,35,55));
-            p.setPen(QPen(sel?QColor(0,200,255):QColor(80,80,110),sel?3:1)); p.setBrush(Qt::NoBrush); p.drawRect(r);
-            int lH=std::min(20,rh); QRect lr(rx,ry+rh-lH,rw,lH);
-            p.fillRect(lr,QColor(0,0,0,160)); p.setPen(Qt::white);
-            QFont f=p.font(); f.setPointSize(7); f.setBold(sel); p.setFont(f);
+            p.setPen(QPen(sel?QColor(0,200,255):QColor(80,80,110),sel?3:1));p.setBrush(Qt::NoBrush);p.drawRect(r);
+            int lH=std::min(20,rh);QRect lr(rx,ry+rh-lH,rw,lH);
+            p.fillRect(lr,QColor(0,0,0,160));p.setPen(Qt::white);
+            QFont f=p.font();f.setPointSize(7);f.setBold(sel);p.setFont(f);
             p.drawText(lr,Qt::AlignCenter,m.name);
         }
     }
@@ -91,18 +91,18 @@ protected:
         int mnX=INT_MAX,mnY=INT_MAX,mxX=INT_MIN,mxY=INT_MIN;
         for (auto &m:m_monitors){mnX=std::min(mnX,m.x);mnY=std::min(mnY,m.y);mxX=std::max(mxX,m.x+m.width);mxY=std::max(mxY,m.y+m.height);}
         int tW=mxX-mnX,tH=mxY-mnY; if(!tW||!tH) return;
-        const int P=14; int aW=width()-2*P,aH=height()-2*P;
+        const int P=14;int aW=width()-2*P,aH=height()-2*P;
         double sc=std::min((double)aW/tW,(double)aH/tH);
-        int oX=P+(aW-(int)(tW*sc))/2, oY=P+(aH-(int)(tH*sc))/2;
+        int oX=P+(aW-(int)(tW*sc))/2,oY=P+(aH-(int)(tH*sc))/2;
         for (auto &m:m_monitors){
             int rx=oX+(int)((m.x-mnX)*sc),ry=oY+(int)((m.y-mnY)*sc);
             int rw=std::max(6,(int)(m.width*sc)),rh=std::max(6,(int)(m.height*sc));
-            if (QRect(rx,ry,rw,rh).contains(ev->pos())) { emit monitorClicked(m.name); return; }
+            if (QRect(rx,ry,rw,rh).contains(ev->pos())){emit monitorClicked(m.name);return;}
         }
     }
 private:
     QList<MonitorInfo> m_monitors;
-    QString m_selected, m_noMon{"No monitors"};
+    QString m_selected,m_noMon{"No monitors"};
     QMap<QString,QString> m_wallpapers;
     QMap<QString,QPixmap> m_pixmaps;
 };
@@ -135,7 +135,7 @@ void MainWindow::buildUi()
         QHBoxLayout *lr = new QHBoxLayout;
         m_langLabel = new QLabel(m_s.langLabel);
         m_langCombo = new QComboBox;
-        m_langCombo->addItems({"English", "Русский"});
+        m_langCombo->addItems({"English", "\u0420\u0443\u0441\u0441\u043a\u0438\u0439"});
         connect(m_langCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
                 this, &MainWindow::onLanguageChanged);
         lr->addWidget(m_langLabel);
@@ -185,13 +185,13 @@ void MainWindow::buildUi()
         sg->addLayout(row);
     }
 
-    // audio
+    // audio checkbox
     m_audioCheck = new QCheckBox(m_s.audioCheck);
     connect(m_audioCheck, &QCheckBox::toggled, this, &MainWindow::onAudioToggled);
     m_audioCheck->hide();
     sg->addWidget(m_audioCheck);
 
-    // volume
+    // volume row
     {
         QWidget *vw = new QWidget;
         QHBoxLayout *row = new QHBoxLayout(vw);
@@ -202,14 +202,14 @@ void MainWindow::buildUi()
         m_volumeLabel = new QLabel("50%"); m_volumeLabel->setMinimumWidth(36);
         connect(m_volumeSlider, &QSlider::valueChanged, this, &MainWindow::onVolumeChanged);
         row->addWidget(m_volumeLabelW);
-        row->addWidget(m_volumeSlider,1);
+        row->addWidget(m_volumeSlider, 1);
         row->addWidget(m_volumeLabel);
         vw->hide();
         m_volumeSlider->setProperty("volWidget", QVariant::fromValue(vw));
         sg->addWidget(vw);
     }
 
-    // bind hint (selectable text, no copy button)
+    // bind hint (selectable text)
     {
         m_bindRow = new QWidget;
         QVBoxLayout *vl = new QVBoxLayout(m_bindRow);
@@ -230,9 +230,9 @@ void MainWindow::buildUi()
         QHBoxLayout *row = new QHBoxLayout;
         m_fillLabel = new QLabel(m_s.fillLabel);
         m_fillCombo = new QComboBox;
-        m_fillCombo->addItems(m_s.fillModes);
+        m_fillCombo->addItems(m_s.imgFillModes);
         row->addWidget(m_fillLabel);
-        row->addWidget(m_fillCombo,1);
+        row->addWidget(m_fillCombo, 1);
         sg->addLayout(row);
     }
 
@@ -241,9 +241,9 @@ void MainWindow::buildUi()
         QHBoxLayout *row = new QHBoxLayout;
         m_rotLabel = new QLabel(m_s.rotLabel);
         m_rotCombo = new QComboBox;
-        m_rotCombo->addItems(m_s.rotModes);
+        m_rotCombo->addItems(m_s.imgRotModes);
         row->addWidget(m_rotLabel);
-        row->addWidget(m_rotCombo,1);
+        row->addWidget(m_rotCombo, 1);
         sg->addLayout(row);
     }
 
@@ -258,6 +258,32 @@ void MainWindow::buildUi()
 
     connect(m_monitorCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::onMonitorSelected);
+}
+
+void MainWindow::switchToVideo(bool isVideo)
+{
+    if (m_isVideo == isVideo) return;
+    m_isVideo = isVideo;
+
+    int prevFill = m_fillCombo->currentIndex();
+    int prevRot  = m_rotCombo->currentIndex();
+
+    m_fillCombo->blockSignals(true);
+    m_rotCombo->blockSignals(true);
+    m_fillCombo->clear();
+    m_rotCombo->clear();
+    if (isVideo) {
+        m_fillCombo->addItems(m_s.vidFillModes);
+        m_rotCombo->addItems(m_s.vidRotModes);
+    } else {
+        m_fillCombo->addItems(m_s.imgFillModes);
+        m_rotCombo->addItems(m_s.imgRotModes);
+    }
+    // clamp index to new list size
+    m_fillCombo->setCurrentIndex(std::min(prevFill, m_fillCombo->count()-1));
+    m_rotCombo->setCurrentIndex(std::min(prevRot,  m_rotCombo->count()-1));
+    m_fillCombo->blockSignals(false);
+    m_rotCombo->blockSignals(false);
 }
 
 void MainWindow::retranslateUi()
@@ -276,11 +302,19 @@ void MainWindow::retranslateUi()
     m_applyBtn->setText(m_s.applyBtn);
     m_bindPrefixLabel->setText(m_s.bindPrefix);
 
-    int fi = m_fillCombo->currentIndex(), ri = m_rotCombo->currentIndex();
+    int fi = m_fillCombo->currentIndex();
+    int ri = m_rotCombo->currentIndex();
     m_fillCombo->blockSignals(true); m_rotCombo->blockSignals(true);
-    m_fillCombo->clear(); m_fillCombo->addItems(m_s.fillModes);
-    m_rotCombo->clear();  m_rotCombo->addItems(m_s.rotModes);
-    m_fillCombo->setCurrentIndex(fi); m_rotCombo->setCurrentIndex(ri);
+    m_fillCombo->clear(); m_rotCombo->clear();
+    if (m_isVideo) {
+        m_fillCombo->addItems(m_s.vidFillModes);
+        m_rotCombo->addItems(m_s.vidRotModes);
+    } else {
+        m_fillCombo->addItems(m_s.imgFillModes);
+        m_rotCombo->addItems(m_s.imgRotModes);
+    }
+    m_fillCombo->setCurrentIndex(std::min(fi, m_fillCombo->count()-1));
+    m_rotCombo->setCurrentIndex(std::min(ri, m_rotCombo->count()-1));
     m_fillCombo->blockSignals(false); m_rotCombo->blockSignals(false);
 
     if (!m_currentMonitor.isEmpty()) populateSettings(m_currentMonitor);
@@ -337,6 +371,12 @@ void MainWindow::populateSettings(const QString &monitorName)
             .arg(it->scale, 0, 'f', 2));
 
     WallpaperConfig cfg = ConfigManager::instance().getConfig(monitorName);
+    bool isVid = WallpaperApplier::isVideoFile(cfg.filePath);
+
+    // Switch combo items before setting index
+    m_isVideo = !isVid; // force switch
+    switchToVideo(isVid);
+
     m_fillCombo->blockSignals(true); m_rotCombo->blockSignals(true);
     m_fileEdit->setText(cfg.filePath);
     m_fillCombo->setCurrentIndex(static_cast<int>(cfg.fillMode));
@@ -346,7 +386,6 @@ void MainWindow::populateSettings(const QString &monitorName)
     m_volumeLabel->setText(QString("%1%").arg(cfg.audioVolume));
     m_fillCombo->blockSignals(false); m_rotCombo->blockSignals(false);
 
-    bool isVid = WallpaperApplier::isVideoFile(cfg.filePath);
     m_audioCheck->setVisible(isVid);
     QWidget *vw = m_volumeSlider->property("volWidget").value<QWidget*>();
     if (vw) vw->setVisible(isVid && cfg.audioEnabled);
@@ -369,14 +408,15 @@ void MainWindow::saveCurrentSettings()
 
 void MainWindow::onBrowseFile()
 {
-    QString title  = m_isRU ? QString("Выберите файл")       : QString("Select file");
-    QString filter = m_isRU ? QString("Изображения и видео") : QString("Images and video");
+    QString title  = m_isRU ? QString("\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0444\u0430\u0439\u043b") : QString("Select file");
+    QString filter = m_isRU ? QString("\u0418\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u044f \u0438 \u0432\u0438\u0434\u0435\u043e") : QString("Images and video");
     filter += " (*.jpg *.jpeg *.png *.bmp *.gif *.mp4 *.mkv *.avi *.webm *.mov);;";
-    filter += m_isRU ? QString("Все файлы (*)") : QString("All files (*)");
+    filter += m_isRU ? QString("\u0412\u0441\u0435 \u0444\u0430\u0439\u043b\u044b (*)") : QString("All files (*)");
     QString path = QFileDialog::getOpenFileName(this, title, QDir::homePath(), filter);
     if (path.isEmpty()) return;
     m_fileEdit->setText(path);
     bool isVid = WallpaperApplier::isVideoFile(path);
+    switchToVideo(isVid);
     m_audioCheck->setVisible(isVid);
     QWidget *vw = m_volumeSlider->property("volWidget").value<QWidget*>();
     if (vw) vw->setVisible(isVid && m_audioCheck->isChecked());

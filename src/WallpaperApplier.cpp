@@ -32,43 +32,34 @@ QString WallpaperApplier::fillModeToHyprpaper(FillMode mode)
     }
 }
 
-// Строит строку mpv-опций для fill+rotation
-static QString mpvOptions(FillMode fill, WallpaperRotation rot, bool audio, int volume)
+// Video fill: 0=Cover(panscan), 1=Contain(keepaspect=yes), 2=Fill(keepaspect=no)
+// Video rot:  0=None, 1=90, 2=180, 3=270, 4=flipH, 5=flipV
+static QString mpvOptions(int fillIdx, int rotIdx, bool audio, int volume)
 {
     QStringList opts;
     opts << "--loop";
 
-    // --- Fill mode ---
-    switch (fill) {
-        case FillMode::Cover:
-            // panscan=1.0: заполняет экран, обрезая по бокам
-            opts << "--panscan=1.0";
-            break;
-        case FillMode::Contain:
-            // keepaspect=yes — дефолт, вписывает целиком
-            opts << "--keepaspect=yes";
-            break;
-        case FillMode::Fill:
-            // растягивает игнорируя пропорции
-            opts << "--keepaspect=no";
-            break;
-        case FillMode::Tile:
-            // mpv не поддерживает tile нативно, используем contain
-            opts << "--keepaspect=yes";
-            break;
+    switch (fillIdx) {
+        case 0: opts << "--panscan=1.0";    break; // Cover
+        case 1: opts << "--keepaspect=yes"; break; // Contain
+        case 2: opts << "--keepaspect=no";  break; // Fill/stretch
+        default: opts << "--keepaspect=yes"; break;
     }
 
-    // --- Rotation / Flip ---
-    switch (rot) {
-        case WallpaperRotation::Normal:         break;
-        case WallpaperRotation::Clockwise90:    opts << "--video-rotate=90";  break;
-        case WallpaperRotation::Clockwise180:   opts << "--video-rotate=180"; break;
-        case WallpaperRotation::Clockwise270:   opts << "--video-rotate=270"; break;
-        case WallpaperRotation::FlipHorizontal: opts << "--vf=hflip";         break;
-        case WallpaperRotation::FlipVertical:   opts << "--vf=vflip";         break;
+    // Rotation and flip via vf chain
+    // Note: --video-rotate and --vf can coexist but vf is a chain,
+    // so we use --vf=lavfi=[transpose] for combined rotate+flip support.
+    // For simple cases: --video-rotate for 90/180/270, --vf=hflip/vflip for mirrors.
+    switch (rotIdx) {
+        case 0: break;
+        case 1: opts << "--video-rotate=90";  break;
+        case 2: opts << "--video-rotate=180"; break;
+        case 3: opts << "--video-rotate=270"; break;
+        case 4: opts << "--vf=hflip";         break;
+        case 5: opts << "--vf=vflip";         break;
+        default: break;
     }
 
-    // --- Audio ---
     if (!audio)
         opts << "--no-audio";
     else
@@ -80,10 +71,8 @@ static QString mpvOptions(FillMode fill, WallpaperRotation rot, bool audio, int 
 QString WallpaperApplier::prepareRotatedImage(const QString &src, WallpaperRotation rot)
 {
     if (rot == WallpaperRotation::Normal) return QString();
-
     QImage img(src);
     if (img.isNull()) { qWarning() << "prepareRotatedImage: cannot load" << src; return QString(); }
-
     QTransform t;
     bool mirrorH = false, mirrorV = false;
     switch (rot) {
@@ -94,11 +83,9 @@ QString WallpaperApplier::prepareRotatedImage(const QString &src, WallpaperRotat
         case WallpaperRotation::FlipVertical:   mirrorV = true; break;
         default: break;
     }
-
     QImage result = (mirrorH || mirrorV)
         ? img.mirrored(mirrorH, mirrorV)
         : img.transformed(t, Qt::SmoothTransformation);
-
     QString cacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + "/HyprWall";
     QDir().mkpath(cacheDir);
     QString tmp = cacheDir + "/" + QFileInfo(src).baseName() + "_rot.png";
@@ -119,7 +106,7 @@ static void writeHyprpaperConf(const QMap<QString, WallpaperConfig> &all)
         const WallpaperConfig &c = it.value();
         if (c.filePath.isEmpty() || WallpaperApplier::isVideoFile(c.filePath)) continue;
         QString path = c.filePath;
-        QString rot  = WallpaperApplier::prepareRotatedImage(path, c.rotation);
+        QString rot = WallpaperApplier::prepareRotatedImage(path, c.rotation);
         if (!rot.isEmpty()) path = rot;
         ts << "wallpaper {\n"
            << "    monitor = " << c.monitorName << "\n"
@@ -133,22 +120,23 @@ static void writeHyprpaperConf(const QMap<QString, WallpaperConfig> &all)
 
 bool WallpaperApplier::apply(const WallpaperConfig &cfg)
 {
-    if (cfg.filePath.isEmpty()) {
-        qWarning() << "apply: empty filePath for" << cfg.monitorName;
-        return false;
-    }
+    if (cfg.filePath.isEmpty()) { qWarning() << "apply: empty filePath"; return false; }
 
-    // --- Video via mpvpaper ---
     if (isVideoFile(cfg.filePath)) {
         stopVideo(cfg.monitorName);
-        QString opts = mpvOptions(cfg.fillMode, cfg.rotation, cfg.audioEnabled, cfg.audioVolume);
+        // fillMode and rotation stored as int index matching video combos
+        QString opts = mpvOptions(
+            static_cast<int>(cfg.fillMode),
+            static_cast<int>(cfg.rotation),
+            cfg.audioEnabled,
+            cfg.audioVolume);
         QStringList args;
         args << "-o" << opts << cfg.monitorName << cfg.filePath;
         qDebug() << "mpvpaper" << args;
         return QProcess::startDetached("mpvpaper", args);
     }
 
-    // --- Static image via hyprpaper ---
+    // Static image
     QString path = cfg.filePath;
     QString rotPath = prepareRotatedImage(path, cfg.rotation);
     if (!rotPath.isEmpty()) path = rotPath;
@@ -194,7 +182,7 @@ void WallpaperApplier::toggleAudio(const QString &monitor)
     auto &cm = ConfigManager::instance();
     cm.load();
     WallpaperConfig cfg = cm.getConfig(monitor);
-    cfg.audioEnabled    = !cfg.audioEnabled;
+    cfg.audioEnabled = !cfg.audioEnabled;
     cm.setConfig(monitor, cfg);
     cm.save();
     apply(cfg);

@@ -8,6 +8,7 @@
 #include <QLabel>
 #include <QGroupBox>
 #include <QList>
+#include <QStackedWidget>
 #include "Types.h"
 #include "MonitorDetector.h"
 
@@ -15,10 +16,14 @@ class MonitorBar;
 
 struct Strings {
     QString windowTitle, langLabel, noMonitors, monitorLabel, groupTitle;
-    QString orientLabel, fileLabel, browseBtn, audioCheck, volumeLabel;
-    QString fillLabel, rotLabel, applyBtn;
-    QString bindPrefix;
-    QStringList fillModes, rotModes;
+    QString fileLabel, browseBtn, audioCheck, volumeLabel;
+    QString fillLabel, rotLabel, applyBtn, bindPrefix;
+    // Image fill/rotation
+    QStringList imgFillModes;  // cover,contain,tile,fill
+    QStringList imgRotModes;   // none,90,180,270,flipH,flipV
+    // Video fill/rotation (mpv options)
+    QStringList vidFillModes;  // cover(panscan),contain,fill(stretch)
+    QStringList vidRotModes;   // none,90,180,270,flipH,flipV
     QString orientLandscape, orientPortrait90, orientLandscape180, orientPortrait270;
     QString errTitle, errBody;
 };
@@ -37,9 +42,13 @@ static Strings stringsEN() {
     s.fillLabel    = "Fill:";
     s.rotLabel     = "Rotation:";
     s.applyBtn     = "Apply";
-    s.fillModes    = {"Cover", "Contain", "Tile", "Fill"};
-    s.rotModes     = {"None", "90 CW", "180", "270 CW", "Flip H", "Flip V"};
     s.bindPrefix   = "Add to hyprland.conf:";
+    // Image
+    s.imgFillModes = {"Cover", "Contain", "Tile", "Fill"};
+    s.imgRotModes  = {"None", "90 CW", "180", "270 CW", "Flip H", "Flip V"};
+    // Video (mpv): tile not supported, flip supported via vf
+    s.vidFillModes = {"Cover (crop)", "Contain (fit)", "Fill (stretch)"};
+    s.vidRotModes  = {"None", "90 CW", "180", "270 CW", "Flip H", "Flip V"};
     s.orientLandscape    = "Landscape";
     s.orientPortrait90   = "Portrait 90";
     s.orientLandscape180 = "Landscape 180";
@@ -52,26 +61,30 @@ static Strings stringsEN() {
 static Strings stringsRU() {
     Strings s;
     s.windowTitle  = "HyprWall";
-    s.langLabel    = "Язык:";
-    s.noMonitors   = "Мониторы не найдены";
-    s.monitorLabel = "Монитор:";
-    s.groupTitle   = "Настройки";
-    s.fileLabel    = "Файл:";
-    s.browseBtn    = "Обзор";
-    s.audioCheck   = "Звук";
-    s.volumeLabel  = "Громкость:";
-    s.fillLabel    = "Заполнение:";
-    s.rotLabel     = "Поворот:";
-    s.applyBtn     = "Применить";
-    s.fillModes    = {"Cover", "Contain", "Tile", "Fill"};
-    s.rotModes     = {"Нет", "90 по часовой", "180", "270 по часовой", "Зеркало H", "Зеркало V"};
-    s.bindPrefix   = "Добавьте в hyprland.conf:";
-    s.orientLandscape    = "Альбомный";
-    s.orientPortrait90   = "Книжный 90";
-    s.orientLandscape180 = "Альбомный 180";
-    s.orientPortrait270  = "Книжный 270";
-    s.errTitle = "Ошибка";
-    s.errBody  = "Не удалось применить обои.\n\nПроверьте:\n- hyprpaper установлен\n- mpvpaper установлен (видео)\n- Путь к файлу корректен";
+    s.langLabel    = "\u042f\u0437\u044b\u043a:";
+    s.noMonitors   = "\u041c\u043e\u043d\u0438\u0442\u043e\u0440\u044b \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u044b";
+    s.monitorLabel = "\u041c\u043e\u043d\u0438\u0442\u043e\u0440:";
+    s.groupTitle   = "\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438";
+    s.fileLabel    = "\u0424\u0430\u0439\u043b:";
+    s.browseBtn    = "\u041e\u0431\u0437\u043e\u0440";
+    s.audioCheck   = "\u0417\u0432\u0443\u043a";
+    s.volumeLabel  = "\u0413\u0440\u043e\u043c\u043a\u043e\u0441\u0442\u044c:";
+    s.fillLabel    = "\u0417\u0430\u043f\u043e\u043b\u043d\u0435\u043d\u0438\u0435:";
+    s.rotLabel     = "\u041f\u043e\u0432\u043e\u0440\u043e\u0442:";
+    s.applyBtn     = "\u041f\u0440\u0438\u043c\u0435\u043d\u0438\u0442\u044c";
+    s.bindPrefix   = "\u0414\u043e\u0431\u0430\u0432\u044c\u0442\u0435 \u0432 hyprland.conf:";
+    // Image
+    s.imgFillModes = {"\u041f\u043e\u043a\u0440\u044b\u0442\u0438\u0435", "\u0412\u043f\u0438\u0441\u0430\u0442\u044c", "\u041f\u043b\u0438\u0442\u043a\u0430", "\u0420\u0430\u0441\u0442\u044f\u043d\u0443\u0442\u044c"};
+    s.imgRotModes  = {"\u041d\u0435\u0442", "90 \u043f\u043e \u0447\u0430\u0441", "180", "270 \u043f\u043e \u0447\u0430\u0441", "\u0417\u0435\u0440\u043a\u0430\u043b\u043e H", "\u0417\u0435\u0440\u043a\u0430\u043b\u043e V"};
+    // Video
+    s.vidFillModes = {"\u041f\u043e\u043a\u0440\u044b\u0442\u0438\u0435 (\u043e\u0431\u0440\u0435\u0437\u043a\u0430)", "\u0412\u043f\u0438\u0441\u0430\u0442\u044c (\u043f\u043e\u043b\u044e\u0441\u044b)", "\u0420\u0430\u0441\u0442\u044f\u043d\u0443\u0442\u044c"};
+    s.vidRotModes  = {"\u041d\u0435\u0442", "90 \u043f\u043e \u0447\u0430\u0441", "180", "270 \u043f\u043e \u0447\u0430\u0441", "\u0417\u0435\u0440\u043a\u0430\u043b\u043e H", "\u0417\u0435\u0440\u043a\u0430\u043b\u043e V"};
+    s.orientLandscape    = "\u0410\u043b\u044c\u0431\u043e\u043c\u043d\u044b\u0439";
+    s.orientPortrait90   = "\u041a\u043d\u0438\u0436\u043d\u044b\u0439 90";
+    s.orientLandscape180 = "\u0410\u043b\u044c\u0431\u043e\u043c\u043d\u044b\u0439 180";
+    s.orientPortrait270  = "\u041a\u043d\u0438\u0436\u043d\u044b\u0439 270";
+    s.errTitle = "\u041e\u0448\u0438\u0431\u043a\u0430";
+    s.errBody  = "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u043f\u0440\u0438\u043c\u0435\u043d\u0438\u0442\u044c \u043e\u0431\u043e\u0438.\n\n\u041f\u0440\u043e\u0432\u0435\u0440\u044c\u0442\u0435:\n- hyprpaper \u0443\u0441\u0442\u0430\u043d\u043e\u0432\u043b\u0435\u043d\n- mpvpaper \u0443\u0441\u0442\u0430\u043d\u043e\u0432\u043b\u0435\u043d (\u0432\u0438\u0434\u0435\u043e)\n- \u041f\u0443\u0442\u044c \u043a \u0444\u0430\u0439\u043b\u0443 \u043a\u043e\u0440\u0440\u0435\u043a\u0442\u0435\u043d";
     return s;
 }
 
@@ -96,10 +109,16 @@ private:
     void populateSettings(const QString &monitorName);
     void saveCurrentSettings();
     void retranslateUi();
+    void switchToVideo(bool isVideo);
     QString bindString() const;
 
+    // Returns current fill index mapped to FillMode (for image) or video fill index
+    int currentFillIndex()  const { return m_fillCombo->currentIndex(); }
+    int currentRotIndex()   const { return m_rotCombo->currentIndex(); }
+
     Strings  m_s;
-    bool     m_isRU = false;
+    bool     m_isRU    = false;
+    bool     m_isVideo = false;
 
     MonitorBar  *m_monitorBar       = nullptr;
     QComboBox   *m_monitorCombo     = nullptr;
@@ -116,15 +135,14 @@ private:
     QLabel      *m_bindHint         = nullptr;
     QWidget     *m_bindRow          = nullptr;
 
-    // retranslate targets
-    QLabel    *m_langLabel      = nullptr;
-    QComboBox *m_langCombo      = nullptr;
-    QLabel    *m_monitorLabel   = nullptr;
-    QLabel    *m_fileLabel      = nullptr;
-    QLabel    *m_volumeLabelW   = nullptr;
-    QLabel    *m_fillLabel      = nullptr;
-    QLabel    *m_rotLabel       = nullptr;
-    QLabel    *m_bindPrefixLabel= nullptr;
+    QLabel    *m_langLabel       = nullptr;
+    QComboBox *m_langCombo       = nullptr;
+    QLabel    *m_monitorLabel    = nullptr;
+    QLabel    *m_fileLabel       = nullptr;
+    QLabel    *m_volumeLabelW    = nullptr;
+    QLabel    *m_fillLabel       = nullptr;
+    QLabel    *m_rotLabel        = nullptr;
+    QLabel    *m_bindPrefixLabel = nullptr;
 
     QList<MonitorInfo> m_monitors;
     QString            m_currentMonitor;
