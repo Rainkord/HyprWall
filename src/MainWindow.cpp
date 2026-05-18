@@ -17,11 +17,8 @@
 #include <algorithm>
 #include <climits>
 
-// ─── helpers ─────────────────────────────────────────────────────────────────
 static QString orientationString(int transform)
 {
-    // transform: 0=normal(альбомный), 1=90°(книжный), 2=180°(альбомный перевёрнутый)
-    //            3=270°(книжный перевёрнутый), 4..7 = flipped варианты
     switch (transform % 4) {
         case 0: return "Альбомный";
         case 1: return "Книжный (90°)";
@@ -36,7 +33,7 @@ class MonitorBar : public QWidget {
     Q_OBJECT
 public:
     explicit MonitorBar(QWidget *p = nullptr) : QWidget(p) {
-        setMinimumHeight(150);
+        setMinimumHeight(160);
         setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         setStyleSheet("background: #1a1a2e; border-radius: 6px;");
     }
@@ -54,13 +51,11 @@ public:
 
     void setWallpaperPath(const QString &monitor, const QString &path) {
         if (path.isEmpty()) return;
-        // кэшируем пиксмап для превью
         if (!WallpaperApplier::isVideoFile(path)) {
             QPixmap px(path);
-            if (!px.isNull())
-                m_pixmaps[monitor] = px;
+            if (!px.isNull()) m_pixmaps[monitor] = px;
         } else {
-            m_pixmaps.remove(monitor); // для видео — заглушка
+            m_pixmaps.remove(monitor);
         }
         m_wallpapers[monitor] = path;
         update();
@@ -81,7 +76,7 @@ protected:
             return;
         }
 
-        // Вычисляем bounding box всей раскладки мониторов
+        // bounding box (в логических пикселях, width/height уже swap-нуты в MonitorDetector)
         int minX = INT_MAX, minY = INT_MAX, maxX = INT_MIN, maxY = INT_MIN;
         for (auto &m : m_monitors) {
             minX = std::min(minX, m.x);
@@ -98,7 +93,7 @@ protected:
         int avH = height() - 2*PAD;
         double sc = std::min((double)avW / totalW, (double)avH / totalH);
 
-        // Центрируем всю раскладку внутри виджета
+        // центрируем
         int scaledW = (int)(totalW * sc);
         int scaledH = (int)(totalH * sc);
         int offsetX = PAD + (avW - scaledW) / 2;
@@ -112,7 +107,6 @@ protected:
             QRect rect(rx, ry, rw, rh);
             bool sel = (m.name == m_selected);
 
-            // фон / превью обоев
             if (m_pixmaps.contains(m.name)) {
                 p.drawPixmap(rect,
                     m_pixmaps[m.name].scaled(rect.size(),
@@ -120,38 +114,32 @@ protected:
                         Qt::SmoothTransformation));
             } else if (m_wallpapers.contains(m.name) &&
                        WallpaperApplier::isVideoFile(m_wallpapers[m.name])) {
-                // видео — тёмно-фиолетовый с иконкой
                 p.fillRect(rect, QColor(30, 20, 50));
                 p.setPen(QColor(180,120,255));
-                QFont fi = p.font(); fi.setPointSize(16); p.setFont(fi);
+                QFont fi = p.font(); fi.setPointSize(14); p.setFont(fi);
                 p.drawText(rect, Qt::AlignCenter, "▶");
             } else {
                 p.fillRect(rect, QColor(35, 35, 55));
             }
 
-            // рамка
-            QPen pen(sel ? QColor(0, 200, 255) : QColor(80, 80, 110), sel ? 3 : 1);
-            p.setPen(pen);
+            p.setPen(QPen(sel ? QColor(0,200,255) : QColor(80,80,110), sel ? 3 : 1));
             p.setBrush(Qt::NoBrush);
             p.drawRect(rect);
 
-            // подложка под текст
-            QRect labelRect(rx, ry + rh - 22, rw, 22);
-            p.fillRect(labelRect, QColor(0,0,0,140));
-
-            // имя + ориентация
+            // подпись
+            int labelH = std::min(22, rh);
+            QRect labelRect(rx, ry + rh - labelH, rw, labelH);
+            p.fillRect(labelRect, QColor(0,0,0,160));
             p.setPen(Qt::white);
             QFont f = p.font();
             f.setPointSize(7); f.setBold(sel);
             p.setFont(f);
-            QString label = m.name;
-            p.drawText(labelRect, Qt::AlignCenter, label);
+            p.drawText(labelRect, Qt::AlignCenter, m.name);
         }
     }
 
     void mousePressEvent(QMouseEvent *ev) override {
         if (m_monitors.isEmpty()) return;
-
         int minX = INT_MAX, minY = INT_MAX, maxX = INT_MIN, maxY = INT_MIN;
         for (auto &m : m_monitors) {
             minX = std::min(minX, m.x); minY = std::min(minY, m.y);
@@ -160,16 +148,11 @@ protected:
         }
         int totalW = maxX - minX, totalH = maxY - minY;
         if (!totalW || !totalH) return;
-
         const int PAD = 14;
-        int avW = width()  - 2*PAD;
-        int avH = height() - 2*PAD;
-        double sc = std::min((double)avW / totalW, (double)avH / totalH);
-        int scaledW = (int)(totalW * sc);
-        int scaledH = (int)(totalH * sc);
-        int offsetX = PAD + (avW - scaledW) / 2;
-        int offsetY = PAD + (avH - scaledH) / 2;
-
+        int avW = width() - 2*PAD, avH = height() - 2*PAD;
+        double sc = std::min((double)avW/totalW, (double)avH/totalH);
+        int offsetX = PAD + (avW - (int)(totalW*sc)) / 2;
+        int offsetY = PAD + (avH - (int)(totalH*sc)) / 2;
         for (auto &m : m_monitors) {
             int rx = offsetX + (int)((m.x - minX) * sc);
             int ry = offsetY + (int)((m.y - minY) * sc);
@@ -186,7 +169,7 @@ private:
     QList<MonitorInfo>     m_monitors;
     QString                m_selected;
     QMap<QString, QString> m_wallpapers;
-    QMap<QString, QPixmap> m_pixmaps;     // кэш превью
+    QMap<QString, QPixmap> m_pixmaps;
 };
 
 #include "MainWindow.moc"
@@ -209,7 +192,6 @@ void MainWindow::buildUi()
     root->setSpacing(8);
     root->setContentsMargins(12, 12, 12, 12);
 
-    // монитор-бар
     m_monitorBar = new MonitorBar(this);
     connect(m_monitorBar, &MonitorBar::monitorClicked, this, [this](const QString &name){
         int idx = m_monitorCombo->findText(name);
@@ -217,16 +199,13 @@ void MainWindow::buildUi()
     });
     root->addWidget(m_monitorBar);
 
-    // выбор монитора
     QHBoxLayout *comboRow = new QHBoxLayout;
     comboRow->addWidget(new QLabel("Монитор:"));
     m_monitorCombo = new QComboBox;
-    connect(m_monitorCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &MainWindow::onMonitorSelected);
+    // Подключаем ПОСЛЕ заполнения списка (чтобы не срабатывал при addItem)
     comboRow->addWidget(m_monitorCombo, 1);
     root->addLayout(comboRow);
 
-    // панель настроек
     m_settingsGroup = new QGroupBox("Настройки монитора");
     QVBoxLayout *sg = new QVBoxLayout(m_settingsGroup);
 
@@ -234,7 +213,6 @@ void MainWindow::buildUi()
     m_orientationLabel->setStyleSheet("color: #aaa; font-size: 11px;");
     sg->addWidget(m_orientationLabel);
 
-    // файл
     QHBoxLayout *fileRow = new QHBoxLayout;
     fileRow->addWidget(new QLabel("Файл:"));
     m_fileEdit  = new QLineEdit;
@@ -245,7 +223,6 @@ void MainWindow::buildUi()
     fileRow->addWidget(m_browseBtn);
     sg->addLayout(fileRow);
 
-    // аудио (только для видео)
     m_audioCheck = new QCheckBox("🔊 Включить звук");
     connect(m_audioCheck, &QCheckBox::toggled, this, &MainWindow::onAudioToggled);
     m_audioCheck->hide();
@@ -273,7 +250,6 @@ void MainWindow::buildUi()
     m_bindHint->hide();
     sg->addWidget(m_bindHint);
 
-    // заполнение
     QHBoxLayout *fillRow = new QHBoxLayout;
     fillRow->addWidget(new QLabel("Заполнение:"));
     m_fillCombo = new QComboBox;
@@ -281,19 +257,14 @@ void MainWindow::buildUi()
                            "По центру (center)", "Плиткой (tile)",
                            "Верх-лево", "Верх-право", "Низ-лево", "Низ-право",
                            "Верх-центр", "Низ-центр", "Центр-лево", "Центр-право"});
-    connect(m_fillCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &MainWindow::onFillModeChanged);
     fillRow->addWidget(m_fillCombo, 1);
     sg->addLayout(fillRow);
 
-    // поворот
     QHBoxLayout *rotRow = new QHBoxLayout;
     rotRow->addWidget(new QLabel("Поворот обоев:"));
     m_rotCombo = new QComboBox;
     m_rotCombo->addItems({"Нормальный (0°)", "Книжный (90°)",
                           "Перевёрнутый (180°)", "Книжный перевёрнутый (270°)"});
-    connect(m_rotCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &MainWindow::onRotationChanged);
     rotRow->addWidget(m_rotCombo, 1);
     sg->addLayout(rotRow);
 
@@ -304,12 +275,19 @@ void MainWindow::buildUi()
 
     root->addWidget(m_settingsGroup);
     root->addStretch();
+
+    // Подключаем сигнал после постройки UI
+    connect(m_monitorCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &MainWindow::onMonitorSelected);
 }
 
 void MainWindow::loadMonitors()
 {
     m_monitors = MonitorDetector::detect();
     m_monitorBar->setMonitors(m_monitors);
+
+    // Блокируем сигнал пока заполняем список
+    m_monitorCombo->blockSignals(true);
     m_monitorCombo->clear();
     auto &cm = ConfigManager::instance();
     for (const MonitorInfo &m : m_monitors) {
@@ -318,13 +296,18 @@ void MainWindow::loadMonitors()
         if (!cfg.filePath.isEmpty())
             m_monitorBar->setWallpaperPath(m.name, cfg.filePath);
     }
-    if (!m_monitors.isEmpty())
+    m_monitorCombo->blockSignals(false);
+
+    if (!m_monitors.isEmpty()) {
+        m_monitorCombo->setCurrentIndex(0);
         onMonitorSelected(0);
+    }
 }
 
 void MainWindow::onMonitorSelected(int index)
 {
     if (index < 0 || index >= m_monitors.size()) return;
+    // Сохраняем настройки предыдущего монитора (без apply!)
     saveCurrentSettings();
     m_currentMonitor = m_monitors[index].name;
     m_monitorBar->setSelected(m_currentMonitor);
@@ -336,22 +319,26 @@ void MainWindow::populateSettings(const QString &monitorName)
     auto it = std::find_if(m_monitors.cbegin(), m_monitors.cend(),
                            [&](const MonitorInfo &m){ return m.name == monitorName; });
     if (it != m_monitors.cend()) {
-        QString orient = orientationString(it->transform);
         m_orientationLabel->setText(
             QString("%1  |  %2×%3  @  %4Hz  scale %5")
-            .arg(orient)
+            .arg(orientationString(it->transform))
             .arg(it->width).arg(it->height)
             .arg(it->refreshRate)
             .arg(it->scale, 0, 'f', 2));
     }
 
     WallpaperConfig cfg = ConfigManager::instance().getConfig(monitorName);
+    // Блокируем сигналы при заполнении полей
+    m_fillCombo->blockSignals(true);
+    m_rotCombo->blockSignals(true);
     m_fileEdit->setText(cfg.filePath);
     m_fillCombo->setCurrentIndex(static_cast<int>(cfg.fillMode));
     m_rotCombo->setCurrentIndex(static_cast<int>(cfg.rotation));
     m_audioCheck->setChecked(cfg.audioEnabled);
     m_volumeSlider->setValue(cfg.audioVolume);
     m_volumeLabel->setText(QString("%1%").arg(cfg.audioVolume));
+    m_fillCombo->blockSignals(false);
+    m_rotCombo->blockSignals(false);
 
     bool isVid = WallpaperApplier::isVideoFile(cfg.filePath);
     m_audioCheck->setVisible(isVid);
@@ -369,7 +356,7 @@ void MainWindow::populateSettings(const QString &monitorName)
 void MainWindow::saveCurrentSettings()
 {
     if (m_currentMonitor.isEmpty()) return;
-    WallpaperConfig cfg = ConfigManager::instance().getConfig(m_currentMonitor);
+    WallpaperConfig cfg;
     cfg.monitorName  = m_currentMonitor;
     cfg.filePath     = m_fileEdit->text();
     cfg.fillMode     = static_cast<FillMode>(m_fillCombo->currentIndex());
@@ -402,15 +389,18 @@ void MainWindow::onBrowseFile()
 
 void MainWindow::onApply()
 {
+    // Сохраняем текущие настройки в ConfigManager
     saveCurrentSettings();
     ConfigManager::instance().save();
+
+    // Применяем (configs() теперь точно не пустой)
     WallpaperConfig cfg = ConfigManager::instance().getConfig(m_currentMonitor);
     bool ok = WallpaperApplier::apply(cfg);
     if (!ok) {
         QMessageBox::warning(this, "Ошибка",
             "Не удалось применить обои.\n\n"
             "Убедитесь что:\n"
-            "• hyprpaper запущен и настроен\n"
+            "• hyprpaper установлен\n"
             "• mpvpaper установлен (для видео)\n"
             "• Путь к файлу корректен");
     }
