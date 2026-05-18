@@ -1,0 +1,12 @@
+[Unit]
+Description=HyprWall — менеджер обоев для Hyprland
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/hyprwall --daemon
+RemainAfterExit=no
+
+[Install]
+WantedBy=graphical-session.target
