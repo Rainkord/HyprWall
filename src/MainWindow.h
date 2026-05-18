@@ -17,7 +17,7 @@ struct Strings {
     QString windowTitle, langLabel, noMonitors, monitorLabel, groupTitle;
     QString fileLabel, browseBtn, audioCheck, volumeLabel;
     QString fillLabel, rotLabel, applyBtn, bindPrefix;
-    // Image fill/rotation (hyprpaper: cover, contain, tile)
+    // Image fill/rotation (hyprpaper: cover, contain)
     QStringList imgFillModes;
     QStringList imgRotModes;
     // Video fill/rotation (mpv)
@@ -42,7 +42,7 @@ static Strings stringsEN() {
     s.rotLabel     = "Rotation:";
     s.applyBtn     = "Apply";
     s.bindPrefix   = "Add to hyprland.conf:";
-    s.imgFillModes = {"Cover", "Contain", "Tile"};
+    s.imgFillModes = {"Cover", "Contain"};
     s.imgRotModes  = {"None", "90 CW", "180", "270 CW", "Flip H", "Flip V"};
     s.vidFillModes = {"Cover (crop)", "Contain (fit)", "Fill (stretch)"};
     s.vidRotModes  = {"None", "90 CW", "180", "270 CW", "Flip H", "Flip V"};
@@ -70,7 +70,7 @@ static Strings stringsRU() {
     s.rotLabel     = "\u041f\u043e\u0432\u043e\u0440\u043e\u0442:";
     s.applyBtn     = "\u041f\u0440\u0438\u043c\u0435\u043d\u0438\u0442\u044c";
     s.bindPrefix   = "\u0414\u043e\u0431\u0430\u0432\u044c\u0442\u0435 \u0432 hyprland.conf:";
-    s.imgFillModes = {"\u041f\u043e\u043a\u0440\u044b\u0442\u0438\u0435", "\u0412\u043f\u0438\u0441\u0430\u0442\u044c", "\u041f\u043b\u0438\u0442\u043a\u0430"};
+    s.imgFillModes = {"\u041f\u043e\u043a\u0440\u044b\u0442\u0438\u0435", "\u0412\u043f\u0438\u0441\u0430\u0442\u044c"};
     s.imgRotModes  = {"\u041d\u0435\u0442", "90 \u043f\u043e \u0447\u0430\u0441", "180", "270 \u043f\u043e \u0447\u0430\u0441", "\u0417\u0435\u0440\u043a\u0430\u043b\u043e H", "\u0417\u0435\u0440\u043a\u0430\u043b\u043e V"};
     s.vidFillModes = {"\u041f\u043e\u043a\u0440\u044b\u0442\u0438\u0435 (\u043e\u0431\u0440\u0435\u0437\u043a\u0430)", "\u0412\u043f\u0438\u0441\u0430\u0442\u044c (\u043f\u043e\u043b\u044e\u0441\u044b)", "\u0420\u0430\u0441\u0442\u044f\u043d\u0443\u0442\u044c"};
     s.vidRotModes  = {"\u041d\u0435\u0442", "90 \u043f\u043e \u0447\u0430\u0441", "180", "270 \u043f\u043e \u0447\u0430\u0441", "\u0417\u0435\u0440\u043a\u0430\u043b\u043e H", "\u0417\u0435\u0440\u043a\u0430\u043b\u043e V"};
