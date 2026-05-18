@@ -8,157 +8,115 @@
 #include <QLabel>
 #include <QPainter>
 #include <QApplication>
+#include <QClipboard>
 #include <QMessageBox>
 #include <QFont>
 #include <QDir>
 #include <QMouseEvent>
 #include <QMap>
 #include <QPixmap>
+#include <QTimer>
 #include <algorithm>
 #include <climits>
 
-static QString orientationString(int transform)
+// --- helpers ---
+static QString orientStr(int transform, const Strings &s)
 {
     switch (transform % 4) {
-        case 0: return "Альбомный";
-        case 1: return "Книжный (90°)";
-        case 2: return "Альбомный перевёрнутый (180°)";
-        case 3: return "Книжный перевёрнутый (270°)";
-        default: return "Неизвестно";
+        case 0: return s.orientLandscape;
+        case 1: return s.orientPortrait90;
+        case 2: return s.orientLandscape180;
+        case 3: return s.orientPortrait270;
+        default: return "?";
     }
 }
 
-// ─── MonitorBar ───────────────────────────────────────────────────────────────
+// ============================================================
+// MonitorBar
+// ============================================================
 class MonitorBar : public QWidget {
     Q_OBJECT
 public:
     explicit MonitorBar(QWidget *p = nullptr) : QWidget(p) {
         setMinimumHeight(160);
         setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        setStyleSheet("background: #1a1a2e; border-radius: 6px;");
+        setStyleSheet("background:#1a1a2e;border-radius:6px;");
     }
-
-    void setMonitors(const QList<MonitorInfo> &monitors) {
-        m_monitors = monitors;
-        m_selected = monitors.isEmpty() ? "" : monitors.first().name;
-        update();
-    }
-
-    void setSelected(const QString &name) {
-        m_selected = name;
-        update();
-    }
-
-    void setWallpaperPath(const QString &monitor, const QString &path) {
+    void setMonitors(const QList<MonitorInfo> &m)  { m_monitors=m; m_selected=m.isEmpty()?"":m.first().name; update(); }
+    void setSelected(const QString &n)              { m_selected=n; update(); }
+    void setNoMonitorsText(const QString &t)        { m_noMon=t; update(); }
+    void setWallpaperPath(const QString &mon, const QString &path) {
         if (path.isEmpty()) return;
         if (!WallpaperApplier::isVideoFile(path)) {
             QPixmap px(path);
-            if (!px.isNull()) m_pixmaps[monitor] = px;
-        } else {
-            m_pixmaps.remove(monitor);
-        }
-        m_wallpapers[monitor] = path;
+            if (!px.isNull()) m_pixmaps[mon]=px;
+        } else m_pixmaps.remove(mon);
+        m_wallpapers[mon]=path;
         update();
     }
-
 signals:
     void monitorClicked(const QString &name);
-
 protected:
-    void paintEvent(QPaintEvent *) override {
+    void paintEvent(QPaintEvent*) override {
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing);
         p.setRenderHint(QPainter::SmoothPixmapTransform);
-
         if (m_monitors.isEmpty()) {
             p.setPen(QColor(120,120,120));
-            p.drawText(rect(), Qt::AlignCenter, "Мониторы не найдены");
+            p.drawText(rect(), Qt::AlignCenter, m_noMon);
             return;
         }
-
-        int minX = INT_MAX, minY = INT_MAX, maxX = INT_MIN, maxY = INT_MIN;
-        for (auto &m : m_monitors) {
-            minX = std::min(minX, m.x);            minY = std::min(minY, m.y);
-            maxX = std::max(maxX, m.x + m.width); maxY = std::max(maxY, m.y + m.height);
-        }
-        int totalW = maxX - minX, totalH = maxY - minY;
-        if (!totalW || !totalH) return;
-
-        const int PAD = 14;
-        int avW = width() - 2*PAD, avH = height() - 2*PAD;
-        double sc = std::min((double)avW/totalW, (double)avH/totalH);
-        int offsetX = PAD + (avW - (int)(totalW*sc)) / 2;
-        int offsetY = PAD + (avH - (int)(totalH*sc)) / 2;
-
-        for (auto &m : m_monitors) {
-            int rx = offsetX + (int)((m.x - minX)*sc);
-            int ry = offsetY + (int)((m.y - minY)*sc);
-            int rw = std::max(6, (int)(m.width *sc));
-            int rh = std::max(6, (int)(m.height*sc));
-            QRect rect(rx, ry, rw, rh);
-            bool sel = (m.name == m_selected);
-
+        int mnX=INT_MAX,mnY=INT_MAX,mxX=INT_MIN,mxY=INT_MIN;
+        for (auto &m:m_monitors) { mnX=std::min(mnX,m.x); mnY=std::min(mnY,m.y); mxX=std::max(mxX,m.x+m.width); mxY=std::max(mxY,m.y+m.height); }
+        int tW=mxX-mnX, tH=mxY-mnY; if(!tW||!tH) return;
+        const int P=14;
+        int aW=width()-2*P, aH=height()-2*P;
+        double sc=std::min((double)aW/tW,(double)aH/tH);
+        int oX=P+(aW-(int)(tW*sc))/2, oY=P+(aH-(int)(tH*sc))/2;
+        for (auto &m:m_monitors) {
+            int rx=oX+(int)((m.x-mnX)*sc), ry=oY+(int)((m.y-mnY)*sc);
+            int rw=std::max(6,(int)(m.width*sc)), rh=std::max(6,(int)(m.height*sc));
+            QRect r(rx,ry,rw,rh); bool sel=(m.name==m_selected);
             if (m_pixmaps.contains(m.name))
-                p.drawPixmap(rect, m_pixmaps[m.name].scaled(
-                    rect.size(), Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation));
-            else if (m_wallpapers.contains(m.name) && WallpaperApplier::isVideoFile(m_wallpapers[m.name])) {
-                p.fillRect(rect, QColor(30,20,50));
-                p.setPen(QColor(180,120,255));
-                QFont fi=p.font(); fi.setPointSize(14); p.setFont(fi);
-                p.drawText(rect, Qt::AlignCenter, "▶");
-            } else
-                p.fillRect(rect, QColor(35,35,55));
-
-            p.setPen(QPen(sel ? QColor(0,200,255) : QColor(80,80,110), sel ? 3 : 1));
-            p.setBrush(Qt::NoBrush);
-            p.drawRect(rect);
-
-            int labelH = std::min(22, rh);
-            QRect lr(rx, ry+rh-labelH, rw, labelH);
-            p.fillRect(lr, QColor(0,0,0,160));
-            p.setPen(Qt::white);
+                p.drawPixmap(r,m_pixmaps[m.name].scaled(r.size(),Qt::KeepAspectRatioByExpanding,Qt::SmoothTransformation));
+            else if (m_wallpapers.contains(m.name)&&WallpaperApplier::isVideoFile(m_wallpapers[m.name]))
+                { p.fillRect(r,QColor(30,20,50)); p.setPen(QColor(180,120,255)); QFont f=p.font(); f.setPointSize(14); p.setFont(f); p.drawText(r,Qt::AlignCenter,">"); }
+            else p.fillRect(r,QColor(35,35,55));
+            p.setPen(QPen(sel?QColor(0,200,255):QColor(80,80,110),sel?3:1)); p.setBrush(Qt::NoBrush); p.drawRect(r);
+            int lH=std::min(20,rh); QRect lr(rx,ry+rh-lH,rw,lH);
+            p.fillRect(lr,QColor(0,0,0,160)); p.setPen(Qt::white);
             QFont f=p.font(); f.setPointSize(7); f.setBold(sel); p.setFont(f);
-            p.drawText(lr, Qt::AlignCenter, m.name);
+            p.drawText(lr,Qt::AlignCenter,m.name);
         }
     }
-
     void mousePressEvent(QMouseEvent *ev) override {
         if (m_monitors.isEmpty()) return;
-        int minX=INT_MAX,minY=INT_MAX,maxX=INT_MIN,maxY=INT_MIN;
-        for (auto &m:m_monitors) {
-            minX=std::min(minX,m.x); minY=std::min(minY,m.y);
-            maxX=std::max(maxX,m.x+m.width); maxY=std::max(maxY,m.y+m.height);
-        }
-        int totalW=maxX-minX, totalH=maxY-minY;
-        if (!totalW||!totalH) return;
-        const int PAD=14;
-        int avW=width()-2*PAD, avH=height()-2*PAD;
-        double sc=std::min((double)avW/totalW,(double)avH/totalH);
-        int offsetX=PAD+(avW-(int)(totalW*sc))/2;
-        int offsetY=PAD+(avH-(int)(totalH*sc))/2;
-        for (auto &m:m_monitors) {
-            int rx=offsetX+(int)((m.x-minX)*sc);
-            int ry=offsetY+(int)((m.y-minY)*sc);
-            int rw=std::max(6,(int)(m.width*sc));
-            int rh=std::max(6,(int)(m.height*sc));
+        int mnX=INT_MAX,mnY=INT_MAX,mxX=INT_MIN,mxY=INT_MIN;
+        for (auto &m:m_monitors){mnX=std::min(mnX,m.x);mnY=std::min(mnY,m.y);mxX=std::max(mxX,m.x+m.width);mxY=std::max(mxY,m.y+m.height);}
+        int tW=mxX-mnX,tH=mxY-mnY; if(!tW||!tH) return;
+        const int P=14; int aW=width()-2*P,aH=height()-2*P;
+        double sc=std::min((double)aW/tW,(double)aH/tH);
+        int oX=P+(aW-(int)(tW*sc))/2, oY=P+(aH-(int)(tH*sc))/2;
+        for (auto &m:m_monitors){
+            int rx=oX+(int)((m.x-mnX)*sc),ry=oY+(int)((m.y-mnY)*sc);
+            int rw=std::max(6,(int)(m.width*sc)),rh=std::max(6,(int)(m.height*sc));
             if (QRect(rx,ry,rw,rh).contains(ev->pos())) { emit monitorClicked(m.name); return; }
         }
     }
-
 private:
-    QList<MonitorInfo>     m_monitors;
-    QString                m_selected;
-    QMap<QString,QString>  m_wallpapers;
-    QMap<QString,QPixmap>  m_pixmaps;
+    QList<MonitorInfo> m_monitors;
+    QString m_selected, m_noMon{"No monitors"};
+    QMap<QString,QString> m_wallpapers;
+    QMap<QString,QPixmap> m_pixmaps;
 };
-
 #include "MainWindow.moc"
 
-// ─── MainWindow ───────────────────────────────────────────────────────────────
+// ============================================================
+// MainWindow
+// ============================================================
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
-    setWindowTitle("HyprWall");
-    setMinimumSize(560, 640);
+    m_s = stringsEN();
     ConfigManager::instance().load();
     buildUi();
     loadMonitors();
@@ -166,99 +124,147 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
 void MainWindow::buildUi()
 {
+    setWindowTitle(m_s.windowTitle);
+    setMinimumSize(560, 660);
+
     QWidget *central = new QWidget(this);
     setCentralWidget(central);
     QVBoxLayout *root = new QVBoxLayout(central);
-    root->setSpacing(8);
-    root->setContentsMargins(12,12,12,12);
+    root->setSpacing(6);
+    root->setContentsMargins(12,10,12,10);
 
+    // --- language row ---
+    {
+        QHBoxLayout *lr = new QHBoxLayout;
+        m_langLabel = new QLabel(m_s.langLabel);
+        m_langCombo = new QComboBox;
+        m_langCombo->addItems({"English", "Русский"});
+        connect(m_langCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                this, &MainWindow::onLanguageChanged);
+        lr->addWidget(m_langLabel);
+        lr->addWidget(m_langCombo);
+        lr->addStretch();
+        root->addLayout(lr);
+    }
+
+    // --- monitor bar ---
     m_monitorBar = new MonitorBar(this);
+    m_monitorBar->setNoMonitorsText(m_s.noMonitors);
     connect(m_monitorBar, &MonitorBar::monitorClicked, this, [this](const QString &name){
         int idx = m_monitorCombo->findText(name);
         if (idx >= 0) m_monitorCombo->setCurrentIndex(idx);
     });
     root->addWidget(m_monitorBar);
 
-    QHBoxLayout *comboRow = new QHBoxLayout;
-    comboRow->addWidget(new QLabel("Монитор:"));
-    m_monitorCombo = new QComboBox;
-    comboRow->addWidget(m_monitorCombo, 1);
-    root->addLayout(comboRow);
+    // --- monitor selector ---
+    {
+        QHBoxLayout *row = new QHBoxLayout;
+        m_monitorLabel = new QLabel(m_s.monitorLabel);
+        m_monitorCombo = new QComboBox;
+        row->addWidget(m_monitorLabel);
+        row->addWidget(m_monitorCombo, 1);
+        root->addLayout(row);
+    }
 
-    m_settingsGroup = new QGroupBox("Настройки монитора");
+    // --- settings group ---
+    m_settingsGroup = new QGroupBox(m_s.groupTitle);
     QVBoxLayout *sg = new QVBoxLayout(m_settingsGroup);
+    sg->setSpacing(5);
 
-    m_orientationLabel = new QLabel("Ориентация: —");
-    m_orientationLabel->setStyleSheet("color: #aaa; font-size: 11px;");
+    m_orientationLabel = new QLabel("-");
+    m_orientationLabel->setStyleSheet("color:#aaa;font-size:11px;");
     sg->addWidget(m_orientationLabel);
 
-    QHBoxLayout *fileRow = new QHBoxLayout;
-    fileRow->addWidget(new QLabel("Файл:"));
-    m_fileEdit = new QLineEdit;
-    m_fileEdit->setPlaceholderText("Путь к изображению или видео...");
-    m_browseBtn = new QPushButton("📂 Обзор");
-    connect(m_browseBtn, &QPushButton::clicked, this, &MainWindow::onBrowseFile);
-    fileRow->addWidget(m_fileEdit, 1);
-    fileRow->addWidget(m_browseBtn);
-    sg->addLayout(fileRow);
+    // file row
+    {
+        QHBoxLayout *row = new QHBoxLayout;
+        m_fileLabel = new QLabel(m_s.fileLabel);
+        m_fileEdit = new QLineEdit;
+        m_browseBtn = new QPushButton(m_s.browseBtn);
+        connect(m_browseBtn, &QPushButton::clicked, this, &MainWindow::onBrowseFile);
+        row->addWidget(m_fileLabel);
+        row->addWidget(m_fileEdit, 1);
+        row->addWidget(m_browseBtn);
+        sg->addLayout(row);
+    }
 
-    m_audioCheck = new QCheckBox("🔊 Включить звук");
+    // audio
+    m_audioCheck = new QCheckBox(m_s.audioCheck);
     connect(m_audioCheck, &QCheckBox::toggled, this, &MainWindow::onAudioToggled);
     m_audioCheck->hide();
     sg->addWidget(m_audioCheck);
 
-    QWidget *volWidget = new QWidget;
-    QHBoxLayout *volRow = new QHBoxLayout(volWidget);
-    volRow->setContentsMargins(0,0,0,0);
-    volRow->addWidget(new QLabel("Громкость:"));
-    m_volumeSlider = new QSlider(Qt::Horizontal);
-    m_volumeSlider->setRange(0,100);
-    m_volumeSlider->setValue(50);
-    connect(m_volumeSlider, &QSlider::valueChanged, this, &MainWindow::onVolumeChanged);
-    m_volumeLabel = new QLabel("50%");
-    m_volumeLabel->setMinimumWidth(36);
-    volRow->addWidget(m_volumeSlider,1);
-    volRow->addWidget(m_volumeLabel);
-    volWidget->hide();
-    m_volumeSlider->setProperty("volWidget", QVariant::fromValue(volWidget));
-    sg->addWidget(volWidget);
+    // volume
+    {
+        QWidget *vw = new QWidget;
+        QHBoxLayout *row = new QHBoxLayout(vw);
+        row->setContentsMargins(0,0,0,0);
+        m_volumeLabelW = new QLabel(m_s.volumeLabel);
+        m_volumeSlider = new QSlider(Qt::Horizontal);
+        m_volumeSlider->setRange(0,100); m_volumeSlider->setValue(50);
+        m_volumeLabel = new QLabel("50%"); m_volumeLabel->setMinimumWidth(36);
+        connect(m_volumeSlider, &QSlider::valueChanged, this, &MainWindow::onVolumeChanged);
+        row->addWidget(m_volumeLabelW);
+        row->addWidget(m_volumeSlider,1);
+        row->addWidget(m_volumeLabel);
+        vw->hide();
+        m_volumeSlider->setProperty("volWidget", QVariant::fromValue(vw));
+        sg->addWidget(vw);
+    }
 
-    m_bindHint = new QLabel;
-    m_bindHint->setWordWrap(true);
-    m_bindHint->setStyleSheet("color:#888;font-size:11px;font-family:monospace;");
-    m_bindHint->hide();
-    sg->addWidget(m_bindHint);
+    // bind hint row: label + copy button
+    {
+        m_bindRow = new QWidget;
+        QHBoxLayout *row = new QHBoxLayout(m_bindRow);
+        row->setContentsMargins(0,0,0,0);
+        m_bindPrefixLabel = new QLabel(m_s.bindPrefix);
+        m_bindPrefixLabel->setStyleSheet("color:#888;font-size:10px;");
+        m_bindHint = new QLabel;
+        m_bindHint->setStyleSheet("color:#aaa;font-size:10px;font-family:monospace;");
+        m_bindHint->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        m_copyBindBtn = new QPushButton(m_s.copyBtn);
+        m_copyBindBtn->setFixedWidth(70);
+        m_copyBindBtn->setFixedHeight(22);
+        connect(m_copyBindBtn, &QPushButton::clicked, this, [this](){
+            QApplication::clipboard()->setText(bindString());
+            m_copyBindBtn->setText(m_s.copyDone);
+            QTimer::singleShot(1500, this, [this](){ m_copyBindBtn->setText(m_s.copyBtn); });
+        });
+        QVBoxLayout *vl = new QVBoxLayout;
+        vl->setSpacing(1);
+        vl->addWidget(m_bindPrefixLabel);
+        vl->addWidget(m_bindHint);
+        row->addLayout(vl, 1);
+        row->addWidget(m_copyBindBtn);
+        m_bindRow->hide();
+        sg->addWidget(m_bindRow);
+    }
 
-    // Заполнение — только реально поддерживаемые hyprpaper режимы
-    QHBoxLayout *fillRow = new QHBoxLayout;
-    fillRow->addWidget(new QLabel("Заполнение:"));
-    m_fillCombo = new QComboBox;
-    m_fillCombo->addItems({
-        "📐 Cover — заполнить (обрежет)",   // FillMode::Cover
-        "📌 Contain — вписать целиком",          // FillMode::Contain
-        "🔲 Tile — плиткой",                      // FillMode::Tile
-        "⇹ Fill — растянуть под экран"          // FillMode::Fill
-    });
-    fillRow->addWidget(m_fillCombo, 1);
-    sg->addLayout(fillRow);
+    // fill
+    {
+        QHBoxLayout *row = new QHBoxLayout;
+        m_fillLabel = new QLabel(m_s.fillLabel);
+        m_fillCombo = new QComboBox;
+        m_fillCombo->addItems(m_s.fillModes);
+        row->addWidget(m_fillLabel);
+        row->addWidget(m_fillCombo,1);
+        sg->addLayout(row);
+    }
 
-    // Разворот/отражение обоев (выполняется программно через QImage)
-    QHBoxLayout *rotRow = new QHBoxLayout;
-    rotRow->addWidget(new QLabel("Разворот:"));
-    m_rotCombo = new QComboBox;
-    m_rotCombo->addItems({
-        "↔ Без изменений",                // Normal
-        "🔃 90° по часовой",             // Clockwise90
-        "🔄 180° (перевёрнуть)",         // Clockwise180
-        "🔂 270° против часовой",       // Clockwise270
-        "↔ Зеркало горизонтально",     // FlipHorizontal
-        "↕ Зеркало вертикально"          // FlipVertical
-    });
-    rotRow->addWidget(m_rotCombo, 1);
-    sg->addLayout(rotRow);
+    // rotation
+    {
+        QHBoxLayout *row = new QHBoxLayout;
+        m_rotLabel = new QLabel(m_s.rotLabel);
+        m_rotCombo = new QComboBox;
+        m_rotCombo->addItems(m_s.rotModes);
+        row->addWidget(m_rotLabel);
+        row->addWidget(m_rotCombo,1);
+        sg->addLayout(row);
+    }
 
-    m_applyBtn = new QPushButton("✅ Применить");
-    m_applyBtn->setFixedHeight(36);
+    // apply
+    m_applyBtn = new QPushButton(m_s.applyBtn);
+    m_applyBtn->setFixedHeight(34);
     connect(m_applyBtn, &QPushButton::clicked, this, &MainWindow::onApply);
     sg->addWidget(m_applyBtn);
 
@@ -267,6 +273,51 @@ void MainWindow::buildUi()
 
     connect(m_monitorCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::onMonitorSelected);
+}
+
+void MainWindow::retranslateUi()
+{
+    setWindowTitle(m_s.windowTitle);
+    m_langLabel->setText(m_s.langLabel);
+    m_monitorBar->setNoMonitorsText(m_s.noMonitors);
+    m_monitorLabel->setText(m_s.monitorLabel);
+    m_settingsGroup->setTitle(m_s.groupTitle);
+    m_fileLabel->setText(m_s.fileLabel);
+    m_browseBtn->setText(m_s.browseBtn);
+    m_audioCheck->setText(m_s.audioCheck);
+    m_volumeLabelW->setText(m_s.volumeLabel);
+    m_fillLabel->setText(m_s.fillLabel);
+    m_rotLabel->setText(m_s.rotLabel);
+    m_applyBtn->setText(m_s.applyBtn);
+    m_bindPrefixLabel->setText(m_s.bindPrefix);
+    m_copyBindBtn->setText(m_s.copyBtn);
+
+    // fill/rot combos — preserve index
+    int fi = m_fillCombo->currentIndex();
+    int ri = m_rotCombo->currentIndex();
+    m_fillCombo->blockSignals(true); m_rotCombo->blockSignals(true);
+    m_fillCombo->clear(); m_fillCombo->addItems(m_s.fillModes);
+    m_rotCombo->clear();  m_rotCombo->addItems(m_s.rotModes);
+    m_fillCombo->setCurrentIndex(fi); m_rotCombo->setCurrentIndex(ri);
+    m_fillCombo->blockSignals(false); m_rotCombo->blockSignals(false);
+
+    // orientation label
+    if (!m_currentMonitor.isEmpty()) populateSettings(m_currentMonitor);
+    m_monitorBar->update();
+}
+
+void MainWindow::onLanguageChanged(int idx)
+{
+    m_isRU = (idx == 1);
+    m_s = m_isRU ? stringsRU() : stringsEN();
+    retranslateUi();
+}
+
+QString MainWindow::bindString() const
+{
+    // SUPER + F1..F12 — пользователь выбирает клавишу в bindHint
+    // Пока используем F9 по умолчанию
+    return QString("bind = SUPER, F9, exec, hyprwall --toggle-audio %1").arg(m_currentMonitor);
 }
 
 void MainWindow::loadMonitors()
@@ -304,32 +355,30 @@ void MainWindow::populateSettings(const QString &monitorName)
         [&](const MonitorInfo &m){ return m.name == monitorName; });
     if (it != m_monitors.cend())
         m_orientationLabel->setText(
-            QString("%1  |  %2×%3  @  %4Hz  scale %5")
-            .arg(orientationString(it->transform))
+            QString("%1  |  %2x%3  @  %4Hz  scale %5")
+            .arg(orientStr(it->transform, m_s))
             .arg(it->width).arg(it->height)
             .arg(it->refreshRate)
             .arg(it->scale, 0, 'f', 2));
 
     WallpaperConfig cfg = ConfigManager::instance().getConfig(monitorName);
-    m_fillCombo->blockSignals(true);
-    m_rotCombo->blockSignals(true);
+    m_fillCombo->blockSignals(true); m_rotCombo->blockSignals(true);
     m_fileEdit->setText(cfg.filePath);
     m_fillCombo->setCurrentIndex(static_cast<int>(cfg.fillMode));
     m_rotCombo->setCurrentIndex(static_cast<int>(cfg.rotation));
     m_audioCheck->setChecked(cfg.audioEnabled);
     m_volumeSlider->setValue(cfg.audioVolume);
     m_volumeLabel->setText(QString("%1%").arg(cfg.audioVolume));
-    m_fillCombo->blockSignals(false);
-    m_rotCombo->blockSignals(false);
+    m_fillCombo->blockSignals(false); m_rotCombo->blockSignals(false);
 
     bool isVid = WallpaperApplier::isVideoFile(cfg.filePath);
     m_audioCheck->setVisible(isVid);
     QWidget *vw = m_volumeSlider->property("volWidget").value<QWidget*>();
     if (vw) vw->setVisible(isVid && cfg.audioEnabled);
     if (isVid) {
-        m_bindHint->setText(QString("💡 bind = , F9, exec, hyprwall --toggle-audio %1").arg(monitorName));
-        m_bindHint->show();
-    } else m_bindHint->hide();
+        m_bindHint->setText(bindString());
+        m_bindRow->show();
+    } else m_bindRow->hide();
 }
 
 void MainWindow::saveCurrentSettings()
@@ -347,8 +396,12 @@ void MainWindow::saveCurrentSettings()
 
 void MainWindow::onBrowseFile()
 {
-    QString path = QFileDialog::getOpenFileName(this, "Выберите обои", QDir::homePath(),
-        "Изображения и видео (*.jpg *.jpeg *.png *.bmp *.gif *.mp4 *.mkv *.avi *.webm *.mov);;Все файлы (*)");
+    QString path = QFileDialog::getOpenFileName(this,
+        m_isRU ? "Выберите файл" : "Select file",
+        QDir::homePath(),
+        (m_isRU ? "Изображения и видео" : "Images and video")
+        + " (*.jpg *.jpeg *.png *.bmp *.gif *.mp4 *.mkv *.avi *.webm *.mov);;"
+        + (m_isRU ? "Все файлы" : "All files") + " (*)");
     if (path.isEmpty()) return;
     m_fileEdit->setText(path);
     bool isVid = WallpaperApplier::isVideoFile(path);
@@ -356,9 +409,9 @@ void MainWindow::onBrowseFile()
     QWidget *vw = m_volumeSlider->property("volWidget").value<QWidget*>();
     if (vw) vw->setVisible(isVid && m_audioCheck->isChecked());
     if (isVid) {
-        m_bindHint->setText(QString("💡 bind = , F9, exec, hyprwall --toggle-audio %1").arg(m_currentMonitor));
-        m_bindHint->show();
-    } else m_bindHint->hide();
+        m_bindHint->setText(bindString());
+        m_bindRow->show();
+    } else m_bindRow->hide();
     m_monitorBar->setWallpaperPath(m_currentMonitor, path);
 }
 
@@ -367,12 +420,8 @@ void MainWindow::onApply()
     saveCurrentSettings();
     ConfigManager::instance().save();
     WallpaperConfig cfg = ConfigManager::instance().getConfig(m_currentMonitor);
-    bool ok = WallpaperApplier::apply(cfg);
-    if (!ok)
-        QMessageBox::warning(this, "Ошибка",
-            "Не удалось применить обои.\n\n"
-            "Убедитесь что:\n• hyprpaper установлен\n"
-            "• mpvpaper установлен (для видео)\n• Путь к файлу корректен");
+    if (!WallpaperApplier::apply(cfg))
+        QMessageBox::warning(this, m_s.errTitle, m_s.errBody);
 }
 
 void MainWindow::onFillModeChanged(int) {}
