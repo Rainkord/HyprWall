@@ -8,6 +8,8 @@
 #include <QStandardPaths>
 #include <QDir>
 #include <QThread>
+#include <QImage>
+#include <QTransform>
 #include <QDebug>
 
 static const QStringList VIDEO_EXTS = {
@@ -19,20 +21,57 @@ bool WallpaperApplier::isVideoFile(const QString &path)
     return VIDEO_EXTS.contains(QFileInfo(path).suffix().toLower());
 }
 
-// fit_mode для hyprpaper 0.8.4+: contain | cover | tile | fill
 QString WallpaperApplier::fillModeToHyprpaper(FillMode mode)
 {
     switch (mode) {
-        case FillMode::Fill:    return "fill";
-        case FillMode::Fit:     return "contain";
-        case FillMode::Stretch: return "fill";   // hyprpaper не имеет stretch, ближайшее fill
-        case FillMode::Center:  return "contain";
+        case FillMode::Cover:   return "cover";
+        case FillMode::Contain: return "contain";
         case FillMode::Tile:    return "tile";
+        case FillMode::Fill:    return "fill";
         default:                return "cover";
     }
 }
 
-// Записывает ~/.config/hypr/hyprpaper.conf в новом формате (0.8.x)
+// Поворачивает/отражает изображение программно и сохраняет во временный файл
+QString WallpaperApplier::prepareRotatedImage(const QString &src, WallpaperRotation rot)
+{
+    if (rot == WallpaperRotation::Normal) return QString(); // не нужно
+
+    QImage img(src);
+    if (img.isNull()) {
+        qWarning() << "prepareRotatedImage: cannot load" << src;
+        return QString();
+    }
+
+    QTransform t;
+    bool mirrored = false;
+    switch (rot) {
+        case WallpaperRotation::Clockwise90:    t.rotate(90);   break;
+        case WallpaperRotation::Clockwise180:   t.rotate(180);  break;
+        case WallpaperRotation::Clockwise270:   t.rotate(270);  break;
+        case WallpaperRotation::FlipHorizontal: mirrored = true; break;
+        case WallpaperRotation::FlipVertical:   t.rotate(180); mirrored = true; break; // флип V = flip H + 180°
+        default: break;
+    }
+
+    QImage result;
+    if (mirrored)
+        result = img.transformed(t).mirrored(true, false);
+    else
+        result = img.transformed(t, Qt::SmoothTransformation);
+
+    // Сохраняем во временный файл
+    QString cacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + "/HyprWall";
+    QDir().mkpath(cacheDir);
+    QString tmpPath = cacheDir + "/" + QFileInfo(src).baseName() + "_rot.png";
+    if (!result.save(tmpPath, "PNG")) {
+        qWarning() << "prepareRotatedImage: cannot save" << tmpPath;
+        return QString();
+    }
+    qDebug() << "Rotated image saved to" << tmpPath;
+    return tmpPath;
+}
+
 static void writeHyprpaperConf(const QMap<QString, WallpaperConfig> &all)
 {
     QString confDir = QStandardPaths::writableLocation(QStandardPaths::ConfigLocation) + "/hypr";
@@ -45,15 +84,17 @@ static void writeHyprpaperConf(const QMap<QString, WallpaperConfig> &all)
     for (auto it = all.cbegin(); it != all.cend(); ++it) {
         const WallpaperConfig &c = it.value();
         if (c.filePath.isEmpty() || WallpaperApplier::isVideoFile(c.filePath)) continue;
-        QString fit = WallpaperApplier::fillModeToHyprpaper(c.fillMode);
+        QString path = c.filePath;
+        QString rotPath = WallpaperApplier::prepareRotatedImage(path, c.rotation);
+        if (!rotPath.isEmpty()) path = rotPath;
         ts << "wallpaper {\n";
         ts << "    monitor = " << c.monitorName << "\n";
-        ts << "    path = " << c.filePath << "\n";
-        ts << "    fit_mode = " << fit << "\n";
+        ts << "    path = " << path << "\n";
+        ts << "    fit_mode = " << WallpaperApplier::fillModeToHyprpaper(c.fillMode) << "\n";
         ts << "}\n\n";
     }
     f.close();
-    qDebug() << "Wrote" << confDir + "/hyprpaper.conf";
+    qDebug() << "Wrote hyprpaper.conf";
 }
 
 bool WallpaperApplier::apply(const WallpaperConfig &cfg)
@@ -66,21 +107,27 @@ bool WallpaperApplier::apply(const WallpaperConfig &cfg)
     // --- Видео ---
     if (isVideoFile(cfg.filePath)) {
         stopVideo(cfg.monitorName);
-        // mpvpaper -o "OPTIONS" MONITOR FILE
-        QStringList mpvOpts;
-        mpvOpts << "--loop";
+        // Правильный синтаксис mpvpaper:
+        // mpvpaper -o "no-audio --loop" MONITOR FILE
+        QString opts = "--loop";
         if (!cfg.audioEnabled)
-            mpvOpts << "--no-audio";
+            opts = "no-audio " + opts;
         else
-            mpvOpts << QString("--volume=%1").arg(cfg.audioVolume);
+            opts += QString(" --volume=%1").arg(cfg.audioVolume);
         QStringList args;
-        args << "-o" << mpvOpts.join(" ");
-        args << cfg.monitorName << cfg.filePath;
+        args << "-o" << opts << cfg.monitorName << cfg.filePath;
         qDebug() << "mpvpaper" << args;
         return QProcess::startDetached("mpvpaper", args);
     }
 
-    // --- Статичнюе обои ---
+    // --- Статичные обои ---
+    // Подготавливаем файл (если нужен поворот)
+    QString path = cfg.filePath;
+    QString rotPath = prepareRotatedImage(path, cfg.rotation);
+    if (!rotPath.isEmpty()) path = rotPath;
+
+    QString fitMode = fillModeToHyprpaper(cfg.fillMode);
+
     // Проверяем запущен ли hyprpaper
     bool running = false;
     {
@@ -90,32 +137,23 @@ bool WallpaperApplier::apply(const WallpaperConfig &cfg)
         running = !chk.readAllStandardOutput().trimmed().isEmpty();
     }
 
-    QString fitMode = fillModeToHyprpaper(cfg.fillMode);
-
     if (running) {
-        // hyprpaper уже запущен — применяем через IPC
-        // Синтаксис 0.8.4+: 'MONITOR, PATH, FIT_MODE'
-        QString ipcArg = QString("%1, %2, %3").arg(cfg.monitorName, cfg.filePath, fitMode);
+        // IPC: 'MONITOR, PATH, FIT_MODE'
+        QString ipcArg = QString("%1, %2, %3").arg(cfg.monitorName, path, fitMode);
         QProcess p;
         p.start("hyprctl", {"hyprpaper", "wallpaper", ipcArg});
         p.waitForFinished(3000);
         QString out = p.readAllStandardOutput().trimmed();
-        QString err = p.readAllStandardError().trimmed();
-        qDebug() << "IPC wallpaper ->" << (out.isEmpty() ? "(empty=ok)" : out) << err;
-
-        // Пустая строка или не содержит слова error/bad — успех
+        qDebug() << "IPC ->" << (out.isEmpty() ? "(empty=ok)" : out);
         if (!out.toLower().contains("error") && !out.toLower().contains("bad"))
             return true;
-
-        qDebug() << "IPC failed, restarting hyprpaper with new config...";
+        qDebug() << "IPC failed, restarting hyprpaper...";
     }
 
-    // Записываем конфиг и перезапускаем hyprpaper
-    // (добавляем текущий cfg в ConfigManager перед записью)
+    // Записываем конфиг и перезапускаем
     auto &cm = ConfigManager::instance();
     cm.setConfig(cfg.monitorName, cfg);
     writeHyprpaperConf(cm.configs());
-
     QProcess::execute("pkill", {"-x", "hyprpaper"});
     QThread::msleep(400);
     bool ok = QProcess::startDetached("hyprpaper", {});
