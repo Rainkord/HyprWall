@@ -8,6 +8,7 @@
 #include <QLabel>
 #include <QGroupBox>
 #include <QList>
+#include <QPoint>
 #include "Types.h"
 #include "MonitorDetector.h"
 
@@ -17,10 +18,8 @@ struct Strings {
     QString windowTitle, langLabel, noMonitors, monitorLabel, groupTitle;
     QString fileLabel, browseBtn, audioCheck, volumeLabel;
     QString fillLabel, rotLabel, applyBtn, bindPrefix;
-    // Image fill/rotation (hyprpaper: cover, contain)
     QStringList imgFillModes;
     QStringList imgRotModes;
-    // Video fill/rotation (mpv)
     QStringList vidFillModes;
     QStringList vidRotModes;
     QString orientLandscape, orientPortrait90, orientLandscape180, orientPortrait270;
@@ -88,6 +87,11 @@ class MainWindow : public QMainWindow {
 public:
     explicit MainWindow(QWidget *parent = nullptr);
 
+protected:
+    void paintEvent(QPaintEvent *) override;
+    void mousePressEvent(QMouseEvent *) override;
+    void mouseMoveEvent(QMouseEvent *) override;
+
 private slots:
     void onMonitorSelected(int index);
     void onBrowseFile();
@@ -110,6 +114,7 @@ private:
     Strings  m_s;
     bool     m_isRU    = false;
     bool     m_isVideo = false;
+    QPoint   m_dragPos;
 
     MonitorBar  *m_monitorBar       = nullptr;
     QComboBox   *m_monitorCombo     = nullptr;
