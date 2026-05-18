@@ -26,12 +26,14 @@ enum class WallpaperRotation {
 
 struct MonitorInfo {
     QString name;
+    QString description;
     int     x = 0;
     int     y = 0;
-    int     width  = 1920;
+    int     width  = 1920;   // логические пиксели (с учётом transform)
     int     height = 1080;
     double  scale  = 1.0;
     int     refreshRate = 60;
+    int     transform = 0;   // 0=normal,1=90,2=180,3=270,4=flipped,...
     bool    connected = true;
 };
 
