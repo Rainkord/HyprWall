@@ -8,7 +8,6 @@
 #include <QLabel>
 #include <QGroupBox>
 #include <QList>
-#include <QStackedWidget>
 #include "Types.h"
 #include "MonitorDetector.h"
 
@@ -18,12 +17,12 @@ struct Strings {
     QString windowTitle, langLabel, noMonitors, monitorLabel, groupTitle;
     QString fileLabel, browseBtn, audioCheck, volumeLabel;
     QString fillLabel, rotLabel, applyBtn, bindPrefix;
-    // Image fill/rotation
-    QStringList imgFillModes;  // cover,contain,tile,fill
-    QStringList imgRotModes;   // none,90,180,270,flipH,flipV
-    // Video fill/rotation (mpv options)
-    QStringList vidFillModes;  // cover(panscan),contain,fill(stretch)
-    QStringList vidRotModes;   // none,90,180,270,flipH,flipV
+    // Image fill/rotation (hyprpaper: cover, contain, tile)
+    QStringList imgFillModes;
+    QStringList imgRotModes;
+    // Video fill/rotation (mpv)
+    QStringList vidFillModes;
+    QStringList vidRotModes;
     QString orientLandscape, orientPortrait90, orientLandscape180, orientPortrait270;
     QString errTitle, errBody;
 };
@@ -43,10 +42,8 @@ static Strings stringsEN() {
     s.rotLabel     = "Rotation:";
     s.applyBtn     = "Apply";
     s.bindPrefix   = "Add to hyprland.conf:";
-    // Image
-    s.imgFillModes = {"Cover", "Contain", "Tile", "Fill"};
+    s.imgFillModes = {"Cover", "Contain", "Tile"};
     s.imgRotModes  = {"None", "90 CW", "180", "270 CW", "Flip H", "Flip V"};
-    // Video (mpv): tile not supported, flip supported via vf
     s.vidFillModes = {"Cover (crop)", "Contain (fit)", "Fill (stretch)"};
     s.vidRotModes  = {"None", "90 CW", "180", "270 CW", "Flip H", "Flip V"};
     s.orientLandscape    = "Landscape";
@@ -73,10 +70,8 @@ static Strings stringsRU() {
     s.rotLabel     = "\u041f\u043e\u0432\u043e\u0440\u043e\u0442:";
     s.applyBtn     = "\u041f\u0440\u0438\u043c\u0435\u043d\u0438\u0442\u044c";
     s.bindPrefix   = "\u0414\u043e\u0431\u0430\u0432\u044c\u0442\u0435 \u0432 hyprland.conf:";
-    // Image
-    s.imgFillModes = {"\u041f\u043e\u043a\u0440\u044b\u0442\u0438\u0435", "\u0412\u043f\u0438\u0441\u0430\u0442\u044c", "\u041f\u043b\u0438\u0442\u043a\u0430", "\u0420\u0430\u0441\u0442\u044f\u043d\u0443\u0442\u044c"};
+    s.imgFillModes = {"\u041f\u043e\u043a\u0440\u044b\u0442\u0438\u0435", "\u0412\u043f\u0438\u0441\u0430\u0442\u044c", "\u041f\u043b\u0438\u0442\u043a\u0430"};
     s.imgRotModes  = {"\u041d\u0435\u0442", "90 \u043f\u043e \u0447\u0430\u0441", "180", "270 \u043f\u043e \u0447\u0430\u0441", "\u0417\u0435\u0440\u043a\u0430\u043b\u043e H", "\u0417\u0435\u0440\u043a\u0430\u043b\u043e V"};
-    // Video
     s.vidFillModes = {"\u041f\u043e\u043a\u0440\u044b\u0442\u0438\u0435 (\u043e\u0431\u0440\u0435\u0437\u043a\u0430)", "\u0412\u043f\u0438\u0441\u0430\u0442\u044c (\u043f\u043e\u043b\u044e\u0441\u044b)", "\u0420\u0430\u0441\u0442\u044f\u043d\u0443\u0442\u044c"};
     s.vidRotModes  = {"\u041d\u0435\u0442", "90 \u043f\u043e \u0447\u0430\u0441", "180", "270 \u043f\u043e \u0447\u0430\u0441", "\u0417\u0435\u0440\u043a\u0430\u043b\u043e H", "\u0417\u0435\u0440\u043a\u0430\u043b\u043e V"};
     s.orientLandscape    = "\u0410\u043b\u044c\u0431\u043e\u043c\u043d\u044b\u0439";
@@ -111,10 +106,6 @@ private:
     void retranslateUi();
     void switchToVideo(bool isVideo);
     QString bindString() const;
-
-    // Returns current fill index mapped to FillMode (for image) or video fill index
-    int currentFillIndex()  const { return m_fillCombo->currentIndex(); }
-    int currentRotIndex()   const { return m_rotCombo->currentIndex(); }
 
     Strings  m_s;
     bool     m_isRU    = false;
