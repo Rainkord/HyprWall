@@ -17,8 +17,20 @@ bool WallpaperApplier::isVideoFile(const QString &path)
 
 QString WallpaperApplier::fillModeToHyprpaper(FillMode mode)
 {
-    Q_UNUSED(mode)
-    return "";
+    switch (mode) {
+        case FillMode::Fill:    return "fill";
+        case FillMode::Fit:     return "contain";
+        case FillMode::Stretch: return "stretch";
+        case FillMode::Center:  return "center";
+        case FillMode::Tile:    return "tile";
+        default:                return "fill";
+    }
+}
+
+static bool isSuccess(const QString &out)
+{
+    // hyprpaper 0.8.4 возвращает пустую строку при успехе, "ok"/"OK" в новых версиях
+    return !out.toLower().contains("error") && !out.toLower().contains("bad");
 }
 
 static QString hyprpaperCmd(const QString &cmd, const QString &arg)
@@ -27,8 +39,19 @@ static QString hyprpaperCmd(const QString &cmd, const QString &arg)
     p.start("hyprctl", {"hyprpaper", cmd, arg});
     p.waitForFinished(3000);
     QString out = p.readAllStandardOutput().trimmed();
-    qDebug() << "hyprctl hyprpaper" << cmd << arg << "->" << out;
+    qDebug() << "hyprctl hyprpaper" << cmd << arg << "->" << (out.isEmpty() ? "(empty=ok)" : out);
     return out;
+}
+
+// Выполняет preload через hyprctl dispatch exec (обход бага v0.8.4)
+static void doPreload(const QString &path)
+{
+    QProcess p;
+    QString cmd = QString("hyprctl hyprpaper preload \"%1\"").arg(path);
+    p.start("hyprctl", {"dispatch", "exec", cmd});
+    p.waitForFinished(2000);
+    qDebug() << "dispatch preload ->" << p.readAllStandardOutput().trimmed();
+    QThread::msleep(400);
 }
 
 bool WallpaperApplier::apply(const WallpaperConfig &cfg)
@@ -48,23 +71,32 @@ bool WallpaperApplier::apply(const WallpaperConfig &cfg)
         return QProcess::startDetached("mpvpaper", args);
     }
 
-    QString wallArg = QString("%1,%2").arg(cfg.monitorName, cfg.filePath);
-    QString out = hyprpaperCmd("wallpaper", wallArg);
-    if (out == "ok" || out == "OK") return true;
+    // Формируем аргумент wallpaper: MONITOR,[fill:]PATH
+    QString fillStr = fillModeToHyprpaper(cfg.fillMode);
+    // Пробуем сначала с fill prefix (работает в новых версиях)
+    QString wallArgFill = QString("%1,%2:%3").arg(cfg.monitorName, fillStr, cfg.filePath);
+    QString wallArgPlain = QString("%1,%2").arg(cfg.monitorName, cfg.filePath);
 
-    // Прелоад через dispatch (hyprpaper 0.8.4 баг: preload не работает через hyprctl напрямую)
-    qDebug() << "wallpaper failed, trying preload via dispatch...";
-    {
-        QProcess p;
-        QString preloadCmd = QString("hyprctl hyprpaper preload \"%1\"").arg(cfg.filePath);
-        p.start("hyprctl", {"dispatch", "exec", preloadCmd});
-        p.waitForFinished(2000);
-        qDebug() << "dispatch preload ->" << p.readAllStandardOutput().trimmed();
+    // Первый попыток (fill prefix)
+    QString out = hyprpaperCmd("wallpaper", wallArgFill);
+    if (isSuccess(out)) return true;
+
+    // Если ошибка содержит "bad path" — значит fill prefix не поддерживается, пробуем без него
+    if (out.contains("bad path") || out.contains("bad")) {
+        out = hyprpaperCmd("wallpaper", wallArgPlain);
+        if (isSuccess(out)) return true;
     }
-    QThread::msleep(500);
 
-    out = hyprpaperCmd("wallpaper", wallArg);
-    return (out == "ok" || out == "OK");
+    // preload нужен — выполняем через dispatch
+    doPreload(cfg.filePath);
+
+    // Повторный попыток с fill prefix
+    out = hyprpaperCmd("wallpaper", wallArgFill);
+    if (isSuccess(out)) return true;
+
+    // Последний шанс — без fill prefix
+    out = hyprpaperCmd("wallpaper", wallArgPlain);
+    return isSuccess(out);
 }
 
 void WallpaperApplier::stopVideo(const QString &monitor)
