@@ -8,14 +8,12 @@
 #include <QLabel>
 #include <QPainter>
 #include <QApplication>
-#include <QClipboard>
 #include <QMessageBox>
 #include <QFont>
 #include <QDir>
 #include <QMouseEvent>
 #include <QMap>
 #include <QPixmap>
-#include <QTimer>
 #include <algorithm>
 #include <climits>
 
@@ -124,7 +122,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 void MainWindow::buildUi()
 {
     setWindowTitle(m_s.windowTitle);
-    setMinimumSize(560, 660);
+    setMinimumSize(560, 640);
 
     QWidget *central = new QWidget(this);
     setCentralWidget(central);
@@ -211,30 +209,18 @@ void MainWindow::buildUi()
         sg->addWidget(vw);
     }
 
-    // bind hint row
+    // bind hint (selectable text, no copy button)
     {
         m_bindRow = new QWidget;
-        QHBoxLayout *row = new QHBoxLayout(m_bindRow);
-        row->setContentsMargins(0,0,0,0);
+        QVBoxLayout *vl = new QVBoxLayout(m_bindRow);
+        vl->setContentsMargins(0,0,0,0); vl->setSpacing(1);
         m_bindPrefixLabel = new QLabel(m_s.bindPrefix);
         m_bindPrefixLabel->setStyleSheet("color:#888;font-size:10px;");
         m_bindHint = new QLabel;
         m_bindHint->setStyleSheet("color:#aaa;font-size:10px;font-family:monospace;");
         m_bindHint->setTextInteractionFlags(Qt::TextSelectableByMouse);
-        m_copyBindBtn = new QPushButton(m_s.copyBtn);
-        m_copyBindBtn->setFixedWidth(70);
-        m_copyBindBtn->setFixedHeight(22);
-        connect(m_copyBindBtn, &QPushButton::clicked, this, [this](){
-            QApplication::clipboard()->setText(bindString());
-            m_copyBindBtn->setText(m_s.copyDone);
-            QTimer::singleShot(1500, this, [this](){ m_copyBindBtn->setText(m_s.copyBtn); });
-        });
-        QVBoxLayout *vl = new QVBoxLayout;
-        vl->setSpacing(1);
         vl->addWidget(m_bindPrefixLabel);
         vl->addWidget(m_bindHint);
-        row->addLayout(vl, 1);
-        row->addWidget(m_copyBindBtn);
         m_bindRow->hide();
         sg->addWidget(m_bindRow);
     }
@@ -289,10 +275,8 @@ void MainWindow::retranslateUi()
     m_rotLabel->setText(m_s.rotLabel);
     m_applyBtn->setText(m_s.applyBtn);
     m_bindPrefixLabel->setText(m_s.bindPrefix);
-    m_copyBindBtn->setText(m_s.copyBtn);
 
-    int fi = m_fillCombo->currentIndex();
-    int ri = m_rotCombo->currentIndex();
+    int fi = m_fillCombo->currentIndex(), ri = m_rotCombo->currentIndex();
     m_fillCombo->blockSignals(true); m_rotCombo->blockSignals(true);
     m_fillCombo->clear(); m_fillCombo->addItems(m_s.fillModes);
     m_rotCombo->clear();  m_rotCombo->addItems(m_s.rotModes);
@@ -329,10 +313,7 @@ void MainWindow::loadMonitors()
             m_monitorBar->setWallpaperPath(m.name, cfg.filePath);
     }
     m_monitorCombo->blockSignals(false);
-    if (!m_monitors.isEmpty()) {
-        m_monitorCombo->setCurrentIndex(0);
-        onMonitorSelected(0);
-    }
+    if (!m_monitors.isEmpty()) { m_monitorCombo->setCurrentIndex(0); onMonitorSelected(0); }
 }
 
 void MainWindow::onMonitorSelected(int index)
@@ -352,8 +333,7 @@ void MainWindow::populateSettings(const QString &monitorName)
         m_orientationLabel->setText(
             QString("%1  |  %2x%3  @  %4Hz  scale %5")
             .arg(orientStr(it->transform, m_s))
-            .arg(it->width).arg(it->height)
-            .arg(it->refreshRate)
+            .arg(it->width).arg(it->height).arg(it->refreshRate)
             .arg(it->scale, 0, 'f', 2));
 
     WallpaperConfig cfg = ConfigManager::instance().getConfig(monitorName);
@@ -370,10 +350,8 @@ void MainWindow::populateSettings(const QString &monitorName)
     m_audioCheck->setVisible(isVid);
     QWidget *vw = m_volumeSlider->property("volWidget").value<QWidget*>();
     if (vw) vw->setVisible(isVid && cfg.audioEnabled);
-    if (isVid) {
-        m_bindHint->setText(bindString());
-        m_bindRow->show();
-    } else m_bindRow->hide();
+    if (isVid) { m_bindHint->setText(bindString()); m_bindRow->show(); }
+    else m_bindRow->hide();
 }
 
 void MainWindow::saveCurrentSettings()
@@ -391,12 +369,10 @@ void MainWindow::saveCurrentSettings()
 
 void MainWindow::onBrowseFile()
 {
-    // Используем QString() чтобы избежать ошибки конкатенации const char*
     QString title  = m_isRU ? QString("Выберите файл")       : QString("Select file");
     QString filter = m_isRU ? QString("Изображения и видео") : QString("Images and video");
     filter += " (*.jpg *.jpeg *.png *.bmp *.gif *.mp4 *.mkv *.avi *.webm *.mov);;";
     filter += m_isRU ? QString("Все файлы (*)") : QString("All files (*)");
-
     QString path = QFileDialog::getOpenFileName(this, title, QDir::homePath(), filter);
     if (path.isEmpty()) return;
     m_fileEdit->setText(path);
@@ -404,10 +380,8 @@ void MainWindow::onBrowseFile()
     m_audioCheck->setVisible(isVid);
     QWidget *vw = m_volumeSlider->property("volWidget").value<QWidget*>();
     if (vw) vw->setVisible(isVid && m_audioCheck->isChecked());
-    if (isVid) {
-        m_bindHint->setText(bindString());
-        m_bindRow->show();
-    } else m_bindRow->hide();
+    if (isVid) { m_bindHint->setText(bindString()); m_bindRow->show(); }
+    else m_bindRow->hide();
     m_monitorBar->setWallpaperPath(m_currentMonitor, path);
 }
 
