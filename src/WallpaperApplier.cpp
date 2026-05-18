@@ -3,6 +3,7 @@
 #include <QProcess>
 #include <QFileInfo>
 #include <QStringList>
+#include <QThread>
 #include <QDebug>
 
 static const QStringList VIDEO_EXTS = {
@@ -20,7 +21,6 @@ QString WallpaperApplier::fillModeToHyprpaper(FillMode mode)
     return "";
 }
 
-// Отправляет команду в hyprpaper через hyprctl и возвращает stdout
 static QString hyprpaperCmd(const QString &cmd, const QString &arg)
 {
     QProcess p;
@@ -48,18 +48,12 @@ bool WallpaperApplier::apply(const WallpaperConfig &cfg)
         return QProcess::startDetached("mpvpaper", args);
     }
 
-    // hyprpaper 0.8.4: preload через hyprctl сломан, wallpaper работает
-    // Сначала пробуем wallpaper без preload
     QString wallArg = QString("%1,%2").arg(cfg.monitorName, cfg.filePath);
     QString out = hyprpaperCmd("wallpaper", wallArg);
-
     if (out == "ok" || out == "OK") return true;
 
-    // Если не сработало — значит нужен preload. Пробуем через hyprctl dispatch exec
-    // чтобы preload выполнился уже на стороне hyprpaper (обход бага)
+    // Прелоад через dispatch (hyprpaper 0.8.4 баг: preload не работает через hyprctl напрямую)
     qDebug() << "wallpaper failed, trying preload via dispatch...";
-
-    // hyprctl dispatch exec — запускает команду в контексте Hyprland
     {
         QProcess p;
         QString preloadCmd = QString("hyprctl hyprpaper preload \"%1\"").arg(cfg.filePath);
@@ -67,11 +61,8 @@ bool WallpaperApplier::apply(const WallpaperConfig &cfg)
         p.waitForFinished(2000);
         qDebug() << "dispatch preload ->" << p.readAllStandardOutput().trimmed();
     }
-
-    // Ждём пока preload отработает
     QThread::msleep(500);
 
-    // Повторный вызов wallpaper
     out = hyprpaperCmd("wallpaper", wallArg);
     return (out == "ok" || out == "OK");
 }
