@@ -30,17 +30,24 @@ QList<MonitorInfo> MonitorDetector::detect()
         m.name        = obj["name"].toString();
         m.description = obj["description"].toString();
         m.transform   = obj["transform"].toInt(0);
-
-        // hyprctl даёт width/height уже с учётом transform
-        // но позиции (x,y) — тоже логические
-        m.width       = obj["width"].toInt();
-        m.height      = obj["height"].toInt();
         m.x           = obj["x"].toInt();
         m.y           = obj["y"].toInt();
         m.scale       = obj["scale"].toDouble(1.0);
-        // refreshRate может быть float (165.0) — берём как double и округляем
         m.refreshRate = (int)obj["refreshRate"].toDouble(60.0);
         m.connected   = true;
+
+        // hyprctl отдаёт физические размеры матрицы (до поворота).
+        // При transform 1 или 3 (90°/270°) логическая ширина и высота меняются местами.
+        int rawW = obj["width"].toInt();
+        int rawH = obj["height"].toInt();
+        if (m.transform % 2 == 1) {
+            // повёрнут на 90 или 270 — swap
+            m.width  = rawH;
+            m.height = rawW;
+        } else {
+            m.width  = rawW;
+            m.height = rawH;
+        }
         result.append(m);
     }
     return result;
