@@ -19,7 +19,6 @@
 #include <algorithm>
 #include <climits>
 
-// --- helpers ---
 static QString orientStr(int transform, const Strings &s)
 {
     switch (transform % 4) {
@@ -133,7 +132,7 @@ void MainWindow::buildUi()
     root->setSpacing(6);
     root->setContentsMargins(12,10,12,10);
 
-    // --- language row ---
+    // language row
     {
         QHBoxLayout *lr = new QHBoxLayout;
         m_langLabel = new QLabel(m_s.langLabel);
@@ -147,7 +146,7 @@ void MainWindow::buildUi()
         root->addLayout(lr);
     }
 
-    // --- monitor bar ---
+    // monitor bar
     m_monitorBar = new MonitorBar(this);
     m_monitorBar->setNoMonitorsText(m_s.noMonitors);
     connect(m_monitorBar, &MonitorBar::monitorClicked, this, [this](const QString &name){
@@ -156,7 +155,7 @@ void MainWindow::buildUi()
     });
     root->addWidget(m_monitorBar);
 
-    // --- monitor selector ---
+    // monitor selector
     {
         QHBoxLayout *row = new QHBoxLayout;
         m_monitorLabel = new QLabel(m_s.monitorLabel);
@@ -166,7 +165,7 @@ void MainWindow::buildUi()
         root->addLayout(row);
     }
 
-    // --- settings group ---
+    // settings group
     m_settingsGroup = new QGroupBox(m_s.groupTitle);
     QVBoxLayout *sg = new QVBoxLayout(m_settingsGroup);
     sg->setSpacing(5);
@@ -212,7 +211,7 @@ void MainWindow::buildUi()
         sg->addWidget(vw);
     }
 
-    // bind hint row: label + copy button
+    // bind hint row
     {
         m_bindRow = new QWidget;
         QHBoxLayout *row = new QHBoxLayout(m_bindRow);
@@ -292,7 +291,6 @@ void MainWindow::retranslateUi()
     m_bindPrefixLabel->setText(m_s.bindPrefix);
     m_copyBindBtn->setText(m_s.copyBtn);
 
-    // fill/rot combos — preserve index
     int fi = m_fillCombo->currentIndex();
     int ri = m_rotCombo->currentIndex();
     m_fillCombo->blockSignals(true); m_rotCombo->blockSignals(true);
@@ -301,7 +299,6 @@ void MainWindow::retranslateUi()
     m_fillCombo->setCurrentIndex(fi); m_rotCombo->setCurrentIndex(ri);
     m_fillCombo->blockSignals(false); m_rotCombo->blockSignals(false);
 
-    // orientation label
     if (!m_currentMonitor.isEmpty()) populateSettings(m_currentMonitor);
     m_monitorBar->update();
 }
@@ -315,8 +312,6 @@ void MainWindow::onLanguageChanged(int idx)
 
 QString MainWindow::bindString() const
 {
-    // SUPER + F1..F12 — пользователь выбирает клавишу в bindHint
-    // Пока используем F9 по умолчанию
     return QString("bind = SUPER, F9, exec, hyprwall --toggle-audio %1").arg(m_currentMonitor);
 }
 
@@ -396,12 +391,13 @@ void MainWindow::saveCurrentSettings()
 
 void MainWindow::onBrowseFile()
 {
-    QString path = QFileDialog::getOpenFileName(this,
-        m_isRU ? "Выберите файл" : "Select file",
-        QDir::homePath(),
-        (m_isRU ? "Изображения и видео" : "Images and video")
-        + " (*.jpg *.jpeg *.png *.bmp *.gif *.mp4 *.mkv *.avi *.webm *.mov);;"
-        + (m_isRU ? "Все файлы" : "All files") + " (*)");
+    // Используем QString() чтобы избежать ошибки конкатенации const char*
+    QString title  = m_isRU ? QString("Выберите файл")       : QString("Select file");
+    QString filter = m_isRU ? QString("Изображения и видео") : QString("Images and video");
+    filter += " (*.jpg *.jpeg *.png *.bmp *.gif *.mp4 *.mkv *.avi *.webm *.mov);;";
+    filter += m_isRU ? QString("Все файлы (*)") : QString("All files (*)");
+
+    QString path = QFileDialog::getOpenFileName(this, title, QDir::homePath(), filter);
     if (path.isEmpty()) return;
     m_fileEdit->setText(path);
     bool isVid = WallpaperApplier::isVideoFile(path);
