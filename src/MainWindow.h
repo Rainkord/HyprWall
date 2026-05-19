@@ -5,19 +5,19 @@
 
 #include <QMainWindow>
 #include <QMap>
+#include <QTimer>
+#include <QLabel>
+#include <QLineEdit>
+#include <QPushButton>
+#include <QComboBox>
+#include <QCheckBox>
+#include <QSlider>
+#include <QGroupBox>
+#include <QRadioButton>
+#include <QButtonGroup>
+#include <QStackedWidget>
 
-class QLabel;
-class QLineEdit;
-class QPushButton;
-class QComboBox;
-class QCheckBox;
-class QSlider;
-class QGroupBox;
-class QRadioButton;
-class QButtonGroup;
-class QStackedWidget;
 class MonitorBar;
-class QTimer;
 
 struct SlideState {
     QStringList files;
@@ -109,6 +109,6 @@ private:
     bool                     m_isVideo = false;
     bool                     m_isRU    = false;
     Strings                  m_s;
-    QMap<QString,SlideState> m_slideStates;     // unused, kept for compat
-    QTimer                  *m_slideshowTimer   = nullptr;
+    QMap<QString,SlideState> m_slideStates;
+    QTimer                  *m_slideshowTimer = nullptr;
 };
