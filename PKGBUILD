@@ -1,6 +1,6 @@
 # Maintainer: Rainkord
 pkgname=hyprwall
-pkgver=0.1.1
+pkgver=0.1.2
 pkgrel=1
 pkgdesc="GUI менеджер обоев для Hyprland с поддержкой видео"
 arch=('x86_64')
