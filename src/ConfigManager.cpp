@@ -22,24 +22,35 @@ QString ConfigManager::configPath()
 
 QString ConfigManager::galleryDir()
 {
-    // ~/.local/share/hyprwall/gallery — users don't browse there normally
     QString dir = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)
                   + "/hyprwall/gallery";
     QDir().mkpath(dir);
     return dir;
 }
 
+WallpaperConfig ConfigManager::getConfig(const QString &monitor) const
+{
+    if (m_configs.contains(monitor))
+        return m_configs.value(monitor);
+    WallpaperConfig cfg;
+    cfg.monitorName = monitor;
+    return cfg;
+}
+
+void ConfigManager::setConfig(const QString &monitor, const WallpaperConfig &cfg)
+{
+    m_configs[monitor] = cfg;
+}
+
 void ConfigManager::load()
 {
     QSettings s(configPath(), QSettings::IniFormat);
 
-    // Slideshow
     s.beginGroup("Slideshow");
     m_slideshow.enabled      = s.value("enabled",      false).toBool();
     m_slideshow.intervalSecs = s.value("intervalSecs", 300).toInt();
     s.endGroup();
 
-    // Per-monitor configs
     for (const QString &mon : s.childGroups()) {
         if (mon == "Slideshow") continue;
         s.beginGroup(mon);
@@ -60,13 +71,11 @@ void ConfigManager::save()
     QSettings s(configPath(), QSettings::IniFormat);
     s.clear();
 
-    // Slideshow
     s.beginGroup("Slideshow");
     s.setValue("enabled",      m_slideshow.enabled);
     s.setValue("intervalSecs", m_slideshow.intervalSecs);
     s.endGroup();
 
-    // Per-monitor
     for (auto it = m_configs.cbegin(); it != m_configs.cend(); ++it) {
         const WallpaperConfig &cfg = it.value();
         s.beginGroup(it.key());
@@ -107,7 +116,6 @@ QList<GalleryItem> ConfigManager::addToGallery(const QStringList &paths)
         QFileInfo fi(src);
         if (!fi.exists()) continue;
         QString dstPath = dest + "/" + fi.fileName();
-        // Avoid duplicates — if same name exists, append counter
         int n = 1;
         while (QFile::exists(dstPath)) {
             dstPath = dest + "/" + fi.baseName() + QString("_%1.").arg(n++) + fi.suffix();
