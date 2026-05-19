@@ -1,21 +1,19 @@
 #include "ServiceManager.h"
 #include "ConfigManager.h"
 #include "WallpaperApplier.h"
-#include "MonitorDetector.h"
 #include <QTimer>
 #include <QCoreApplication>
 #include <QDebug>
 
-void ServiceManager::runDaemon()
+void ServiceManager::applyAll(const QList<MonitorInfo> &/*monitors*/)
 {
     ConfigManager &cm = ConfigManager::instance();
     cm.load();
 
-    // Apply saved configs for all monitors (static wallpapers)
+    // Apply saved static wallpapers for all monitors
     WallpaperApplier::applyAll(cm.configs());
 
     // Start per-monitor slideshow timers for monitors that have it enabled
-    // We need a QCoreApplication event loop running, so schedule via QTimer::singleShot
     const auto configs = cm.configs();
     for (auto it = configs.cbegin(); it != configs.cend(); ++it) {
         const WallpaperConfig &cfg = it.value();
