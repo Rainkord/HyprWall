@@ -19,10 +19,10 @@ class MonitorBar;
 class ToggleSwitch;
 
 struct MonitorSlideshowState {
-    bool    enabled     = false;
-    int     intervalSecs= 300;
-    int     mediaMode   = 2; // 0=photos, 1=videos, 2=both
-    QTimer *timer       = nullptr;
+    bool    enabled      = false;
+    int     intervalSecs = 300;
+    int     mediaMode    = 2; // 0=photos, 1=videos, 2=both
+    QTimer *timer        = nullptr;
 };
 
 class MainWindow : public QMainWindow {
@@ -59,7 +59,7 @@ private:
     void loadMonitors();
     void populateSettings(const QString &monitorName);
     void saveCurrentToPending();
-    void applyAndSaveCurrent();   // instant apply for all controls
+    void applyAndSaveCurrent();
     void retranslateUi();
     void updateAutostartSwitch();
     void switchToVideo(bool isVideo);
@@ -79,8 +79,8 @@ private:
     QString             m_currentMonitor;
     QPoint              m_dragPos;
     Strings             m_s;
-    bool                m_isRU            = false;
-    bool                m_isVideo         = false;
+    bool                m_isRU             = false;
+    bool                m_isVideo          = false;
     bool                m_updatingControls = false;
     QMap<QString, WallpaperConfig>       m_pending;
     QMap<QString, MonitorSlideshowState> m_ssState;
@@ -97,8 +97,11 @@ private:
     QLabel       *m_langLabel        = nullptr;
     QComboBox    *m_langCombo        = nullptr;
 
-    // Slideshow controls
-    QCheckBox    *m_slideshowCheck    = nullptr;
+    // Slideshow toggle-switch (same style as autostart)
+    QLabel       *m_slideshowLabel   = nullptr;  // "Slideshow:" text
+    ToggleSwitch *m_slideshowSwitch  = nullptr;  // animated toggle
+
+    // Slideshow sub-controls
     QWidget      *m_timerRow          = nullptr;
     QLabel       *m_intervalPrefixLbl = nullptr;
     QComboBox    *m_intervalCombo     = nullptr;
@@ -110,7 +113,7 @@ private:
     // Gallery
     QGroupBox    *m_galleryGroup     = nullptr;
     QPushButton  *m_galleryAddBtn    = nullptr;
-    QScrollArea  *m_galleryScroll    = nullptr;  // adaptive height scroll area
+    QScrollArea  *m_galleryScroll    = nullptr;
     QWidget      *m_galleryGrid      = nullptr;
     QLabel       *m_galleryEmptyLbl  = nullptr;
 
@@ -134,5 +137,4 @@ private:
     QWidget      *m_bindRow          = nullptr;
     QLabel       *m_bindPrefixLabel  = nullptr;
     QLabel       *m_bindHint         = nullptr;
-    // NOTE: m_applyBtn removed — changes are now applied instantly
 };
