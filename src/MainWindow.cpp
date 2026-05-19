@@ -15,7 +15,8 @@
 #include <QCheckBox>
 #include <QSlider>
 #include <QLineEdit>
-#include <QScrollArea>
+#include <QListWidget>
+#include <QListWidgetItem>
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QProcess>
@@ -38,6 +39,12 @@
 #include <climits>
 
 const int MainWindow::INTERVAL_VALUES[] = { 60, 300, 600, 900, 1800, 3600 };
+
+// Fixed thumbnail size — never changes regardless of window width
+static constexpr int THUMB_W = 120;
+static constexpr int THUMB_H = 68;   // ~16:9
+static constexpr int GRID_W  = THUMB_W + 6;  // cell = thumb + 6px padding
+static constexpr int GRID_H  = THUMB_H + 20; // cell height includes text label row
 
 // ============================================================
 // ToggleSwitch
@@ -90,6 +97,79 @@ private:
     bool   m_checked;
     int    m_knobX;
     QPropertyAnimation *m_anim;
+};
+
+// ============================================================
+// GalleryItemDelegate — draws thumbnail + × button
+// ============================================================
+#include <QStyledItemDelegate>
+#include <QPainterPath>
+class GalleryDelegate : public QStyledItemDelegate {
+    Q_OBJECT
+public:
+    explicit GalleryDelegate(QObject *parent = nullptr) : QStyledItemDelegate(parent) {}
+
+    void paint(QPainter *p, const QStyleOptionViewItem &opt,
+               const QModelIndex &idx) const override
+    {
+        p->save();
+        QRect r = opt.rect;
+
+        // Background / selection
+        bool sel = opt.state & QStyle::State_Selected;
+        QColor bg = sel ? QColor(0x38,0x8b,0xfd,50) : QColor(22,27,34,180);
+        p->setBrush(bg);
+        p->setPen(QPen(sel ? QColor(0x58,0xa6,0xff,180) : QColor(0x30,0x36,0x3d,150), 1));
+        QPainterPath path;
+        path.addRoundedRect(QRectF(r).adjusted(0.5,0.5,-0.5,-0.5), 5, 5);
+        p->setRenderHint(QPainter::Antialiasing);
+        p->drawPath(path);
+
+        // Thumbnail image (fills the whole cell except bottom label)
+        QRect imgR = r.adjusted(1, 1, -1, -(GRID_H - THUMB_H - 1));
+        QPixmap px = idx.data(Qt::DecorationRole).value<QIcon>().pixmap(THUMB_W, THUMB_H);
+        if (!px.isNull()) {
+            // Scale & crop to fill imgR exactly
+            QPixmap scaled = px.scaled(imgR.size(),
+                Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+            int cx = (scaled.width()  - imgR.width())  / 2;
+            int cy = (scaled.height() - imgR.height()) / 2;
+            p->setClipRect(imgR);
+            p->drawPixmap(imgR.topLeft(), scaled, QRect(cx, cy, imgR.width(), imgR.height()));
+            p->setClipping(false);
+        }
+
+        // Filename label
+        QRect lblR(r.left(), r.bottom() - (GRID_H - THUMB_H - 2), r.width(), GRID_H - THUMB_H - 1);
+        p->setPen(QColor(0x8b,0x94,0x9e));
+        QFont f = p->font(); f.setPointSize(8); p->setFont(f);
+        QString name = idx.data(Qt::DisplayRole).toString();
+        p->drawText(lblR, Qt::AlignCenter | Qt::TextSingleLine,
+            p->fontMetrics().elidedText(name, Qt::ElideRight, lblR.width() - 4));
+
+        // × delete button (top-right corner)
+        QRect xR(r.right() - 19, r.top() + 2, 17, 17);
+        p->setBrush(QColor(218,54,51,160));
+        p->setPen(Qt::NoPen);
+        p->drawEllipse(xR);
+        p->setPen(QColor(0xff,0xff,0xff,220));
+        QFont xf = p->font(); xf.setPointSize(8); xf.setBold(true); p->setFont(xf);
+        p->drawText(xR, Qt::AlignCenter, "\u00d7");
+
+        // Dim overlay when slideshow locked
+        bool locked = idx.data(Qt::UserRole + 2).toBool();
+        if (locked) {
+            p->setBrush(QColor(13,17,23,110));
+            p->setPen(Qt::NoPen);
+            p->drawPath(path);
+        }
+
+        p->restore();
+    }
+
+    QSize sizeHint(const QStyleOptionViewItem &, const QModelIndex &) const override {
+        return QSize(GRID_W, GRID_H);
+    }
 };
 
 // ============================================================
@@ -176,14 +256,6 @@ QPushButton#galleryAddBtn:hover {
 QPushButton#galleryAddBtn:pressed {
     background: rgba(40,46,54,230);
 }
-QPushButton#thumbRemove {
-    background: rgba(218,54,51,160); border: none;
-    border-radius: 9px; color: #fff; font-weight: 700;
-    font-size: 11px; padding: 0;
-    min-height: 18px; max-height: 18px;
-    min-width: 18px; max-width: 18px;
-}
-QPushButton#thumbRemove:hover { background: rgba(218,54,51,230); }
 QCheckBox { spacing: 8px; color: #8b949e; min-height: 28px; }
 QCheckBox::indicator {
     width: 15px; height: 15px;
@@ -199,12 +271,20 @@ QSlider::handle:horizontal {
 QSlider::sub-page:horizontal { background: #388bfd; border-radius: 2px; }
 QLabel#orientLabel { color: #8b949e; font-size: 11px; }
 QLabel#galleryEmpty { color: #484f58; font-size: 12px; }
-QWidget#galleryThumb {
-    background: rgba(22,27,34,200);
-    border: 1px solid #30363d;
-    border-radius: 6px;
+QListWidget#galleryList {
+    background: transparent;
+    border: none;
+    outline: none;
 }
-QWidget#galleryThumb:hover { border-color: #58a6ff; }
+QListWidget#galleryList::item {
+    background: transparent;
+    border: none;
+    padding: 0;
+}
+QListWidget#galleryList::item:selected {
+    background: transparent;
+    border: none;
+}
 )";
 
 static QString orientStr(int t, const Strings &s)
@@ -422,27 +502,30 @@ void MainWindow::mouseMoveEvent(QMouseEvent *e)
         move(e->globalPosition().toPoint() - m_dragPos);
 }
 
-void MainWindow::resizeEvent(QResizeEvent *ev)
-{
-    QMainWindow::resizeEvent(ev);
-    // Refresh gallery layout so column count adapts to new window width
-    if (m_galleryScroll)
-        QTimer::singleShot(0, this, &MainWindow::refreshGallery);
-}
-
 bool MainWindow::eventFilter(QObject *obj, QEvent *ev)
 {
-    if (ev->type() == QEvent::MouseButtonRelease) {
-        QLabel *lbl = qobject_cast<QLabel*>(obj);
-        if (lbl && lbl->objectName() == "thumbImg") {
-            bool ssOn = m_currentMonitor.isEmpty() ? false
-                        : m_ssState.value(m_currentMonitor).enabled;
-            if (!ssOn) {
-                onGalleryItemClicked(lbl->property("itemPath").toString(),
-                                     lbl->property("itemIsVideo").toBool());
+    // Handle clicks on the gallery list widget
+    if (obj == m_galleryList && ev->type() == QEvent::MouseButtonRelease) {
+        auto *me = static_cast<QMouseEvent*>(ev);
+        QListWidgetItem *it = m_galleryList->itemAt(me->pos());
+        if (it) {
+            // Check if click lands on the × button area (top-right 20px of cell)
+            QRect cellRect = m_galleryList->visualItemRect(it);
+            QRect xZone(cellRect.right() - 20, cellRect.top(), 20, 20);
+            if (xZone.contains(me->pos())) {
+                // Delete
+                onGalleryRemove(it->data(Qt::UserRole).toString());
+            } else {
+                // Select wallpaper
+                bool locked = it->data(Qt::UserRole + 2).toBool();
+                if (!locked) {
+                    onGalleryItemClicked(
+                        it->data(Qt::UserRole).toString(),
+                        it->data(Qt::UserRole + 1).toBool());
+                }
             }
-            return true;
         }
+        return true;
     }
     return QMainWindow::eventFilter(obj, ev);
 }
@@ -607,7 +690,7 @@ void MainWindow::buildUi()
     m_mediaModeRow->hide();
     sg->addWidget(m_mediaModeRow);
 
-    // 5. Fill  — ABOVE gallery
+    // 5. Fill
     m_fillRow = new QWidget;
     {
         QHBoxLayout *row = new QHBoxLayout(m_fillRow);
@@ -625,7 +708,7 @@ void MainWindow::buildUi()
     }
     sg->addWidget(m_fillRow);
 
-    // 6. Rotation — ABOVE gallery
+    // 6. Rotation
     m_rotRow = new QWidget;
     {
         QHBoxLayout *row = new QHBoxLayout(m_rotRow);
@@ -643,7 +726,7 @@ void MainWindow::buildUi()
     }
     sg->addWidget(m_rotRow);
 
-    // 7. Gallery — BELOW fill & rotation
+    // 7. Gallery
     buildGalleryPanel(sg);
 
     // 8. Audio row
@@ -704,7 +787,7 @@ void MainWindow::buildUi()
 }
 
 // ============================================================
-// Gallery panel
+// Gallery panel  (QListWidget + IconMode — zero lag)
 // ============================================================
 void MainWindow::buildGalleryPanel(QVBoxLayout *parent)
 {
@@ -714,11 +797,10 @@ void MainWindow::buildGalleryPanel(QVBoxLayout *parent)
     vl->setSpacing(5);
     vl->setContentsMargins(8,14,8,8);
 
-    // Neutral Add button — small, right-aligned
+    // Add button — right-aligned
     {
         QHBoxLayout *bar = new QHBoxLayout;
-        bar->setContentsMargins(0,0,0,2);
-        bar->setSpacing(6);
+        bar->setContentsMargins(0,0,0,2); bar->setSpacing(6);
         bar->addStretch();
         m_galleryAddBtn = new QPushButton(m_s.galleryAddBtn);
         m_galleryAddBtn->setObjectName("galleryAddBtn");
@@ -728,160 +810,109 @@ void MainWindow::buildGalleryPanel(QVBoxLayout *parent)
         vl->addLayout(bar);
     }
 
-    // Gallery scroll area
-    m_galleryScroll = new QScrollArea;
-    m_galleryScroll->setWidgetResizable(true);
-    m_galleryScroll->setMinimumHeight(60);
-    m_galleryScroll->setMaximumHeight(320);
-    m_galleryScroll->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    m_galleryScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    m_galleryScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    m_galleryScroll->setStyleSheet("background:transparent;border:none;");
+    // QListWidget in IconMode
+    // - iconSize = THUMB_W x THUMB_H
+    // - gridSize = GRID_W x GRID_H (cell includes label)
+    // - ResizeMode::Adjust → Qt recalculates columns automatically on resize
+    // - Movement::Static   → items don't move/drag
+    // - UniformItemSizes   → enables the fast uniform-item layout path
+    m_galleryList = new QListWidget;
+    m_galleryList->setObjectName("galleryList");
+    m_galleryList->setViewMode(QListView::IconMode);
+    m_galleryList->setIconSize(QSize(THUMB_W, THUMB_H));
+    m_galleryList->setGridSize(QSize(GRID_W, GRID_H));
+    m_galleryList->setResizeMode(QListView::Adjust);   // ← magic: auto column recalc
+    m_galleryList->setMovement(QListView::Static);
+    m_galleryList->setUniformItemSizes(true);           // fast layout path
+    m_galleryList->setSpacing(3);
+    m_galleryList->setWordWrap(false);
+    m_galleryList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_galleryList->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    m_galleryList->setMinimumHeight(GRID_H + 10);
+    m_galleryList->setMaximumHeight(GRID_H * 3 + 30);
+    m_galleryList->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    m_galleryList->setItemDelegate(new GalleryDelegate(m_galleryList));
+    m_galleryList->setSelectionMode(QAbstractItemView::NoSelection);
+    m_galleryList->viewport()->installEventFilter(this);
+    // remap obj so eventFilter sees viewport:
+    m_galleryList->viewport()->setObjectName("galleryViewport");
 
-    m_galleryGrid = new QWidget;
-    m_galleryGrid->setObjectName("galleryGrid");
-    m_galleryGrid->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    m_galleryScroll->setWidget(m_galleryGrid);
+    vl->addWidget(m_galleryList);
 
     m_galleryEmptyLbl = new QLabel(m_s.galleryEmptyHint);
     m_galleryEmptyLbl->setAlignment(Qt::AlignCenter);
     m_galleryEmptyLbl->setObjectName("galleryEmpty");
+    m_galleryEmptyLbl->hide();
+    vl->addWidget(m_galleryEmptyLbl);
 
-    vl->addWidget(m_galleryScroll);
     parent->addWidget(m_galleryGroup);
-
-    // First render after the widget tree is fully laid out
-    QTimer::singleShot(50, this, &MainWindow::refreshGallery);
+    refreshGallery();
 }
 
 // ============================================================
-// Gallery refresh  — adaptive, fixed-size thumbnails
-//
-// Strategy:
-//   • Each thumbnail is FIXED_THUMB_W x FIXED_THUMB_H pixels (constant).
-//   • We pack as many columns as fit in the available viewport width.
-//   • Columns are NOT stretched — they keep the exact thumb size.
-//   • This matches the screenshot behaviour: on a narrow window 6 thumbs
-//     fit per row; on a wider window more fit automatically.
+// refreshGallery — just repopulate the model, Qt handles layout
 // ============================================================
 void MainWindow::refreshGallery()
 {
+    if (!m_galleryList) return;
+    m_galleryList->clear();
+
     bool ssLocked = !m_currentMonitor.isEmpty()
                     && m_ssState.value(m_currentMonitor).enabled;
-
-    // Clear old layout
-    if (QLayout *old = m_galleryGrid->layout()) {
-        QLayoutItem *it;
-        while ((it = old->takeAt(0)) != nullptr) {
-            if (it->widget()) it->widget()->deleteLater();
-            delete it;
-        }
-        delete old;
-    }
 
     QList<GalleryItem> items = ConfigManager::instance().loadGallery();
 
     if (items.isEmpty()) {
-        QVBoxLayout *vl2 = new QVBoxLayout(m_galleryGrid);
-        vl2->setAlignment(Qt::AlignCenter);
-        vl2->setContentsMargins(0, 12, 0, 12);
-        vl2->addWidget(m_galleryEmptyLbl);
+        m_galleryList->hide();
         m_galleryEmptyLbl->show();
-        m_galleryScroll->setMinimumHeight(50);
-        m_galleryScroll->setMaximumHeight(70);
         return;
     }
     m_galleryEmptyLbl->hide();
+    m_galleryList->show();
 
-    // ── Fixed thumb size, adaptive column count ───────────────
-    // Thumb width is FIXED — we just pack as many as fit.
-    const int THUMB_W  = 120;   // fixed px width per thumbnail
-    const int SPACING  = 4;
-    const int MARGIN   = 4;
-    const int THUMB_H  = (THUMB_W * 9) / 16;  // 16:9 aspect → 67px
-
-    // Measure viewport width (most accurate after layout)
-    int vw = 0;
-    if (m_galleryScroll->viewport())
-        vw = m_galleryScroll->viewport()->width();
-    if (vw < 60) vw = m_galleryScroll->width() - 4;
-    if (vw < 60) vw = width() - 52;
-
-    int availW = vw - 2 * MARGIN;
-    // How many THUMB_W columns fit without squashing?
-    int COLS = std::max(1, (availW + SPACING) / (THUMB_W + SPACING));
-
-    int rows  = (items.size() + COLS - 1) / COLS;
-    int gridH = rows * (THUMB_H + SPACING) - SPACING + 2 * MARGIN;
-    int saH   = std::min(gridH + 4, 320);
-    m_galleryScroll->setMinimumHeight(std::min(saH, THUMB_H + 2*MARGIN + 4));
-    m_galleryScroll->setMaximumHeight(saH);
-
-    QGridLayout *grid = new QGridLayout(m_galleryGrid);
-    grid->setSpacing(SPACING);
-    grid->setContentsMargins(MARGIN, MARGIN, MARGIN, MARGIN);
-    grid->setAlignment(Qt::AlignTop | Qt::AlignLeft);
-    // NO column stretch — each column is exactly THUMB_W wide
-    for (int c = 0; c < COLS; ++c)
-        grid->setColumnMinimumWidth(c, THUMB_W);
-
-    int col = 0, row = 0;
     for (const GalleryItem &item : items) {
-        // Outer container: fixed size so grid never compresses/stretches the thumb
-        QWidget *thumb = new QWidget;
-        thumb->setObjectName("galleryThumb");
-        thumb->setProperty("ssLocked", ssLocked);
-        thumb->setCursor(ssLocked ? Qt::ArrowCursor : Qt::PointingHandCursor);
-        thumb->setToolTip(QFileInfo(item.path).fileName());
-        thumb->setFixedSize(THUMB_W, THUMB_H);
-
-        // Image label fills the entire thumb widget
-        QLabel *img = new QLabel(thumb);
-        img->setGeometry(0, 0, THUMB_W, THUMB_H);
-        img->setAlignment(Qt::AlignCenter);
-        img->setObjectName("thumbImg");
-        img->setProperty("itemPath",    item.path);
-        img->setProperty("itemIsVideo", item.isVideo);
-        img->installEventFilter(this);
+        QListWidgetItem *wi = new QListWidgetItem;
+        wi->setData(Qt::UserRole,      item.path);
+        wi->setData(Qt::UserRole + 1,  item.isVideo);
+        wi->setData(Qt::UserRole + 2,  ssLocked);
+        wi->setText(QFileInfo(item.path).fileName());
+        wi->setToolTip(item.path);
+        wi->setSizeHint(QSize(GRID_W, GRID_H));
+        wi->setFlags(Qt::ItemIsEnabled);   // no built-in selection highlight
 
         if (!item.isVideo) {
             QPixmap px(item.path);
-            if (!px.isNull()) {
-                img->setPixmap(px.scaled(THUMB_W, THUMB_H,
-                    Qt::KeepAspectRatioByExpanding,
-                    Qt::SmoothTransformation).copy(0, 0, THUMB_W, THUMB_H));
-            } else {
-                img->setText(QFileInfo(item.path).suffix().toUpper());
-            }
+            if (!px.isNull())
+                wi->setIcon(QIcon(px));
+            else
+                wi->setIcon(QIcon::fromTheme("image-x-generic"));
         } else {
-            img->setText("\u25b6 " + QFileInfo(item.path).suffix().toUpper());
-            img->setStyleSheet("background:rgba(20,10,40,200);color:#a78bfa;"
-                               "font-size:12px;font-weight:600;");
+            // Build a simple video placeholder icon
+            QPixmap vp(THUMB_W, THUMB_H);
+            vp.fill(QColor(16, 10, 30));
+            QPainter pp(&vp);
+            pp.setPen(QColor(139, 92, 246));
+            pp.setFont(QFont("sans", THUMB_H / 4));
+            pp.drawText(vp.rect(), Qt::AlignCenter, "\u25b6");
+            wi->setIcon(QIcon(vp));
         }
-
-        // Dim overlay when locked
-        if (ssLocked) {
-            QLabel *overlay = new QLabel(thumb);
-            overlay->setGeometry(0, 0, THUMB_W, THUMB_H);
-            overlay->setStyleSheet("background:rgba(13,17,23,120);");
-            overlay->raise();
-        }
-
-        QPushButton *del = new QPushButton("\u00d7", thumb);
-        del->setFixedSize(18, 18);
-        del->move(THUMB_W - 20, 2);
-        del->setObjectName("thumbRemove");
-        del->setToolTip(m_s.galleryRemoveTooltip);
-        del->raise();
-        const QString pathCopy = item.path;
-        QObject::connect(del, &QPushButton::clicked, [this, pathCopy]{
-            onGalleryRemove(pathCopy);
-        });
-
-        grid->addWidget(thumb, row, col);
-        if (++col >= COLS) { col = 0; ++row; }
+        m_galleryList->addItem(wi);
     }
+
+    // Adjust max-height to actual content rows
+    int rowH  = GRID_H + 6;
+    int rows  = std::max(1, (m_galleryList->count() * GRID_W + m_galleryList->width() - 1)
+                            / std::max(1, m_galleryList->width()));
+    int maxH  = std::min(rows * rowH + 10, GRID_H * 3 + 30);
+    m_galleryList->setMaximumHeight(maxH);
 }
+
+// ============================================================
+// eventFilter — handle gallery viewport clicks
+// ============================================================
+// Already defined above in the class definition order — the
+// implementation is placed near buildUi for readability:
+//   see bool MainWindow::eventFilter(...) earlier in this file.
 
 // ============================================================
 // Instant apply helper
@@ -986,7 +1017,7 @@ void MainWindow::retranslateUi()
     m_intervalCombo->blockSignals(false);
 
     int fi = m_fillCombo->currentIndex(), ri = m_rotCombo->currentIndex();
-    m_fillCombo->blockSignals(true); m_rotCombo->blockSignals(true);
+    m_fillCombo->blockSignals(true); m_rotCombo->blockSignals(false);
     m_fillCombo->clear(); m_rotCombo->clear();
     if (m_isVideo) { m_fillCombo->addItems(m_s.vidFillModes); m_rotCombo->addItems(m_s.vidRotModes); }
     else           { m_fillCombo->addItems(m_s.imgFillModes); m_rotCombo->addItems(m_s.imgRotModes); }

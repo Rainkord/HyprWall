@@ -3,7 +3,6 @@
 #include <QPoint>
 #include <QMap>
 #include <QTimer>
-#include <QScrollArea>
 #include "Types.h"
 #include "Strings.h"
 
@@ -15,6 +14,7 @@ class QSlider;
 class QGroupBox;
 class QVBoxLayout;
 class QWidget;
+class QListWidget;
 class MonitorBar;
 class ToggleSwitch;
 
@@ -40,7 +40,6 @@ protected:
     void paintEvent(QPaintEvent *) override;
     void mousePressEvent(QMouseEvent *) override;
     void mouseMoveEvent(QMouseEvent *) override;
-    void resizeEvent(QResizeEvent *ev) override;
 
 private slots:
     void onMonitorClicked(const QString &name);
@@ -83,7 +82,6 @@ private:
     bool                m_isRU             = false;
     bool                m_isVideo          = false;
     bool                m_updatingControls = false;
-    bool                m_galleryNeedsRefresh = true;
     QMap<QString, WallpaperConfig>       m_pending;
     QMap<QString, MonitorSlideshowState> m_ssState;
 
@@ -99,7 +97,7 @@ private:
     QLabel       *m_langLabel        = nullptr;
     QComboBox    *m_langCombo        = nullptr;
 
-    // Slideshow toggle-switch (same style as autostart)
+    // Slideshow toggle-switch
     QLabel       *m_slideshowLabel   = nullptr;
     ToggleSwitch *m_slideshowSwitch  = nullptr;
 
@@ -112,11 +110,10 @@ private:
     QLabel       *m_mediaModeLabel    = nullptr;
     QComboBox    *m_mediaModeCombo    = nullptr;
 
-    // Gallery
+    // Gallery — QListWidget in IconMode (no manual grid math)
     QGroupBox    *m_galleryGroup     = nullptr;
     QPushButton  *m_galleryAddBtn    = nullptr;
-    QScrollArea  *m_galleryScroll    = nullptr;
-    QWidget      *m_galleryGrid      = nullptr;
+    QListWidget  *m_galleryList      = nullptr;   // replaces m_galleryScroll/m_galleryGrid
     QLabel       *m_galleryEmptyLbl  = nullptr;
 
     // Audio / video
