@@ -12,7 +12,7 @@ source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
 sha256sums=('SKIP')
 
 build() {
-    cd "$pkgname-$pkgver"
+    cd "HyprWall-$pkgver"
     cmake -B build -G Ninja \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/usr
@@ -20,6 +20,6 @@ build() {
 }
 
 package() {
-    cd "$pkgname-$pkgver"
+    cd "HyprWall-$pkgver"
     DESTDIR="$pkgdir" cmake --install build
 }
