@@ -348,6 +348,8 @@ public:
         { m_monitors=m; m_selected=m.isEmpty()?QString():m.first().name; update(); }
     void setSelected(const QString &n) { m_selected=n; update(); }
     void setNoMonitorsText(const QString &t) { m_noMon=t; update(); }
+
+    // mode: -1=blank, 0=static image, 1=video, 2=slideshow
     void setMonitorMode(const QString &mon, int mode, const QString &imgPath={})
     {
         m_modes[mon]=mode;
@@ -386,6 +388,7 @@ protected:
             QRect r(rx,ry,rw,rh); bool sel=(m.name==m_selected);
             int mode=m_modes.value(m.name,-1);
             if (mode==0 && m_pixmaps.contains(m.name)) {
+                // Static wallpaper — draw the image
                 const QPixmap &px=m_pixmaps[m.name];
                 QSize sc2=px.size().scaled(r.size(),Qt::KeepAspectRatioByExpanding);
                 QPixmap sp=px.scaled(sc2,Qt::IgnoreAspectRatio,Qt::SmoothTransformation);
@@ -393,10 +396,37 @@ protected:
                 p.setClipRect(r); p.drawPixmap(r.topLeft(),sp,QRect(cx,cy,r.width(),r.height()));
                 p.setClipping(false);
             } else if (mode==1) {
+                // Video wallpaper
                 p.fillRect(r,QColor(16,10,30));
                 QFont f=p.font(); f.setPointSize(std::max(8,rh/5)); p.setFont(f);
                 p.setPen(QColor(139,92,246));
                 p.drawText(r,Qt::AlignCenter,"\u25b6");
+            } else if (mode==2) {
+                // Slideshow — draw a 2×2 grid of mini-thumbnails + shuffle badge
+                p.fillRect(r, QColor(13,17,23));
+                const int cols=2, rows=2;
+                int cw=r.width()/cols, ch=r.height()/rows;
+                // Draw thin grid lines
+                p.setPen(QPen(QColor(0x30,0x36,0x3d,180),1));
+                for(int ci=1;ci<cols;++ci)
+                    p.drawLine(r.left()+ci*cw, r.top(), r.left()+ci*cw, r.bottom());
+                for(int ri=1;ri<rows;++ri)
+                    p.drawLine(r.left(), r.top()+ri*ch, r.right(), r.top()+ri*ch);
+                // Small image placeholders
+                p.setBrush(QColor(22,27,34));
+                p.setPen(Qt::NoPen);
+                for(int ci=0;ci<cols;++ci)
+                    for(int ri=0;ri<rows;++ri)
+                        p.drawRect(r.left()+ci*cw+1, r.top()+ri*ch+1, cw-2, ch-2);
+                // Shuffle / slideshow badge (bottom-right)
+                int badgeS=std::min(rh/3, 18);
+                QRect badge(r.right()-badgeS-2, r.bottom()-badgeS-2, badgeS, badgeS);
+                p.setBrush(QColor(0x23,0x86,0x36,220));
+                p.setPen(Qt::NoPen);
+                p.drawEllipse(badge);
+                p.setPen(QColor(0xf0,0xf6,0xfc,230));
+                QFont bf=p.font(); bf.setPointSize(std::max(6,badgeS*5/9)); bf.setBold(true); p.setFont(bf);
+                p.drawText(badge, Qt::AlignCenter, "\u21ba"); // ↺
             } else {
                 p.fillRect(r,QColor(22,27,34));
             }
@@ -971,14 +1001,15 @@ void MainWindow::applyAndSaveCurrent()
 
     if (ss.enabled) {
         startSlideshowForMonitor(m_currentMonitor);
+        // Show slideshow indicator regardless of filePath
+        m_monitorBar->setMonitorMode(m_currentMonitor, 2, {});
     } else {
         stopSlideshowForMonitor(m_currentMonitor);
         if (!cfg.filePath.isEmpty())
             WallpaperApplier::apply(cfg);
+        bool vid = WallpaperApplier::isVideoFile(cfg.filePath);
+        m_monitorBar->setMonitorMode(m_currentMonitor, vid?1:0, vid?QString():cfg.filePath);
     }
-
-    bool vid = WallpaperApplier::isVideoFile(cfg.filePath);
-    m_monitorBar->setMonitorMode(m_currentMonitor, vid?1:0, vid?QString():cfg.filePath);
 }
 
 void MainWindow::updateAutostartSwitch()
@@ -1105,8 +1136,10 @@ void MainWindow::loadMonitors()
         ss.enabled      = cfg.slideshowEnabled;
         ss.intervalSecs = cfg.slideshowInterval;
         ss.mediaMode    = cfg.slideshowMode;
-        if (ss.enabled) startSlideshowForMonitor(m.name);
-        if (!cfg.filePath.isEmpty()) {
+        if (ss.enabled) {
+            startSlideshowForMonitor(m.name);
+            m_monitorBar->setMonitorMode(m.name, 2, {});
+        } else if (!cfg.filePath.isEmpty()) {
             bool vid = WallpaperApplier::isVideoFile(cfg.filePath);
             m_monitorBar->setMonitorMode(m.name, vid?1:0, vid?QString():cfg.filePath);
         }
@@ -1176,7 +1209,12 @@ void MainWindow::populateSettings(const QString &monitorName)
         else m_bindRow->hide();
     }
 
-    m_monitorBar->setMonitorMode(monitorName, isVid?1:0, isVid?QString():cfg.filePath);
+    // Show correct indicator: slideshow=2, video=1, image=0
+    if (ss.enabled)
+        m_monitorBar->setMonitorMode(monitorName, 2, {});
+    else
+        m_monitorBar->setMonitorMode(monitorName, isVid?1:0, isVid?QString():cfg.filePath);
+
     m_updatingControls = false;
 }
 
@@ -1223,9 +1261,15 @@ void MainWindow::onApplyAll()
     }
 
     for (auto it = m_pending.cbegin(); it != m_pending.cend(); ++it) {
-        bool vid = WallpaperApplier::isVideoFile(it.value().filePath);
-        m_monitorBar->setMonitorMode(it.key(), vid?1:0,
-                                     vid?QString():it.value().filePath);
+        const QString &mon = it.key();
+        const MonitorSlideshowState &ss = m_ssState.value(mon);
+        if (ss.enabled) {
+            m_monitorBar->setMonitorMode(mon, 2, {});
+        } else {
+            bool vid = WallpaperApplier::isVideoFile(it.value().filePath);
+            m_monitorBar->setMonitorMode(mon, vid?1:0,
+                                         vid?QString():it.value().filePath);
+        }
     }
 }
 
@@ -1271,8 +1315,10 @@ void MainWindow::onGalleryItemClicked(const QString &path, bool isVideo)
     m_volumeRow->setVisible(isVideo && m_audioCheck->isChecked() && !ssOn);
     if (isVideo && !ssOn) { m_bindHint->setText(bindString()); m_bindRow->show(); }
     else m_bindRow->hide();
-    m_monitorBar->setMonitorMode(m_currentMonitor, isVideo?1:0,
-                                 isVideo?QString():path);
+    // When slideshow is on, item clicks don't change the bar indicator
+    if (!ssOn)
+        m_monitorBar->setMonitorMode(m_currentMonitor, isVideo?1:0,
+                                     isVideo?QString():path);
     applyAndSaveCurrent();
 }
 
