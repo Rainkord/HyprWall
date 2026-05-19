@@ -36,6 +36,8 @@
 #include <QFont>
 #include <QSizePolicy>
 #include <QPropertyAnimation>
+#include <QtConcurrent/QtConcurrent>
+#include <QFutureWatcher>
 #include <algorithm>
 #include <climits>
 
@@ -138,6 +140,11 @@ public:
             p->setClipRect(imgR);
             p->drawPixmap(imgR.topLeft(), scaled, QRect(cx, cy, imgR.width(), imgR.height()));
             p->setClipping(false);
+        } else {
+            // Placeholder while thumbnail loads
+            p->fillRect(imgR, QColor(30, 35, 42));
+            p->setPen(QColor(0x48,0x4f,0x58));
+            p->drawText(imgR, Qt::AlignCenter, "…");
         }
 
         // Filename label
@@ -505,19 +512,15 @@ void MainWindow::mouseMoveEvent(QMouseEvent *e)
 
 bool MainWindow::eventFilter(QObject *obj, QEvent *ev)
 {
-    // Handle clicks on the gallery list widget
     if (obj == m_galleryList->viewport() && ev->type() == QEvent::MouseButtonRelease) {
         auto *me = static_cast<QMouseEvent*>(ev);
         QListWidgetItem *it = m_galleryList->itemAt(me->pos());
         if (it) {
-            // Check if click lands on the × button area (top-right 20px of cell)
             QRect cellRect = m_galleryList->visualItemRect(it);
             QRect xZone(cellRect.right() - 20, cellRect.top(), 20, 20);
             if (xZone.contains(me->pos())) {
-                // Delete
                 onGalleryRemove(it->data(Qt::UserRole).toString());
             } else {
-                // Select wallpaper
                 bool locked = it->data(Qt::UserRole + 2).toBool();
                 if (!locked) {
                     onGalleryItemClicked(
@@ -788,7 +791,7 @@ void MainWindow::buildUi()
 }
 
 // ============================================================
-// Gallery panel  (QListWidget + IconMode — zero lag)
+// Gallery panel  (QListWidget + IconMode)
 // ============================================================
 void MainWindow::buildGalleryPanel(QVBoxLayout *parent)
 {
@@ -798,7 +801,6 @@ void MainWindow::buildGalleryPanel(QVBoxLayout *parent)
     vl->setSpacing(5);
     vl->setContentsMargins(8,14,8,8);
 
-    // Add button — right-aligned
     {
         QHBoxLayout *bar = new QHBoxLayout;
         bar->setContentsMargins(0,0,0,2); bar->setSpacing(6);
@@ -811,20 +813,14 @@ void MainWindow::buildGalleryPanel(QVBoxLayout *parent)
         vl->addLayout(bar);
     }
 
-    // QListWidget in IconMode
-    // - iconSize = THUMB_W x THUMB_H
-    // - gridSize = GRID_W x GRID_H (cell includes label)
-    // - ResizeMode::Adjust → Qt recalculates columns automatically on resize
-    // - Movement::Static   → items don't move/drag
-    // - UniformItemSizes   → enables the fast uniform-item layout path
     m_galleryList = new QListWidget;
     m_galleryList->setObjectName("galleryList");
     m_galleryList->setViewMode(QListView::IconMode);
     m_galleryList->setIconSize(QSize(THUMB_W, THUMB_H));
     m_galleryList->setGridSize(QSize(GRID_W, GRID_H));
-    m_galleryList->setResizeMode(QListView::Adjust);   // ← magic: auto column recalc
+    m_galleryList->setResizeMode(QListView::Adjust);
     m_galleryList->setMovement(QListView::Static);
-    m_galleryList->setUniformItemSizes(true);           // fast layout path
+    m_galleryList->setUniformItemSizes(true);
     m_galleryList->setSpacing(3);
     m_galleryList->setWordWrap(false);
     m_galleryList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -835,7 +831,6 @@ void MainWindow::buildGalleryPanel(QVBoxLayout *parent)
     m_galleryList->setItemDelegate(new GalleryDelegate(m_galleryList));
     m_galleryList->setSelectionMode(QAbstractItemView::NoSelection);
     m_galleryList->viewport()->installEventFilter(this);
-    // remap obj so eventFilter sees viewport:
     m_galleryList->viewport()->setObjectName("galleryViewport");
 
     vl->addWidget(m_galleryList);
@@ -851,12 +846,15 @@ void MainWindow::buildGalleryPanel(QVBoxLayout *parent)
 }
 
 // ============================================================
-// refreshGallery — just repopulate the model, Qt handles layout
+// refreshGallery — populate model instantly, load thumbs async
 // ============================================================
 void MainWindow::refreshGallery()
 {
     if (!m_galleryList) return;
     m_galleryList->clear();
+
+    // Bump generation so any in-flight async loads for the old list are discarded
+    ++m_thumbGeneration;
 
     bool ssLocked = !m_currentMonitor.isEmpty()
                     && m_ssState.value(m_currentMonitor).enabled;
@@ -873,22 +871,16 @@ void MainWindow::refreshGallery()
 
     for (const GalleryItem &item : items) {
         QListWidgetItem *wi = new QListWidgetItem;
-        wi->setData(Qt::UserRole,      item.path);
-        wi->setData(Qt::UserRole + 1,  item.isVideo);
-        wi->setData(Qt::UserRole + 2,  ssLocked);
+        wi->setData(Qt::UserRole,     item.path);
+        wi->setData(Qt::UserRole + 1, item.isVideo);
+        wi->setData(Qt::UserRole + 2, ssLocked);
         wi->setText(QFileInfo(item.path).fileName());
         wi->setToolTip(item.path);
         wi->setSizeHint(QSize(GRID_W, GRID_H));
-        wi->setFlags(Qt::ItemIsEnabled);   // no built-in selection highlight
+        wi->setFlags(Qt::ItemIsEnabled);
 
-        if (!item.isVideo) {
-            QPixmap px(item.path);
-            if (!px.isNull())
-                wi->setIcon(QIcon(px));
-            else
-                wi->setIcon(QIcon::fromTheme("image-x-generic"));
-        } else {
-            // Build a simple video placeholder icon
+        if (item.isVideo) {
+            // Video placeholder — build synchronously (trivial cost)
             QPixmap vp(THUMB_W, THUMB_H);
             vp.fill(QColor(16, 10, 30));
             QPainter pp(&vp);
@@ -896,24 +888,71 @@ void MainWindow::refreshGallery()
             pp.setFont(QFont("sans", THUMB_H / 4));
             pp.drawText(vp.rect(), Qt::AlignCenter, "\u25b6");
             wi->setIcon(QIcon(vp));
+        } else {
+            // Check cache first — no disk I/O needed if already loaded
+            if (m_thumbCache.contains(item.path)) {
+                wi->setIcon(QIcon(m_thumbCache[item.path]));
+            } else {
+                // Leave icon empty (placeholder drawn by delegate), load async
+                loadThumbAsync(item.path, m_thumbGeneration);
+            }
         }
+
         m_galleryList->addItem(wi);
     }
 
     // Adjust max-height to actual content rows
-    int rowH  = GRID_H + 6;
-    int rows  = std::max(1, (m_galleryList->count() * GRID_W + m_galleryList->width() - 1)
-                            / std::max(1, m_galleryList->width()));
+    int rowH = GRID_H + 6;
+    int cols  = std::max(1, m_galleryList->width() / (GRID_W + 6));
+    int rows  = std::max(1, (m_galleryList->count() + cols - 1) / cols);
     int maxH  = std::min(rows * rowH + 10, GRID_H * 3 + 30);
     m_galleryList->setMaximumHeight(maxH);
 }
 
 // ============================================================
-// eventFilter — handle gallery viewport clicks
+// loadThumbAsync — reads + scales one image on a worker thread,
+//                  then updates the matching list item on the GUI thread
 // ============================================================
-// Already defined above in the class definition order — the
-// implementation is placed near buildUi for readability:
-//   see bool MainWindow::eventFilter(...) earlier in this file.
+void MainWindow::loadThumbAsync(const QString &path, int generation)
+{
+    // Capture by value — safe across thread boundary
+    auto *watcher = new QFutureWatcher<QPixmap>(this);
+
+    connect(watcher, &QFutureWatcher<QPixmap>::finished, this,
+            [this, path, generation, watcher]() {
+                watcher->deleteLater();
+
+                // Discard result if the gallery was refreshed again meanwhile
+                if (generation != m_thumbGeneration) return;
+
+                QPixmap px = watcher->result();
+                if (px.isNull()) return;
+
+                // Store in cache
+                m_thumbCache[path] = px;
+
+                // Find the matching item and set its icon
+                for (int i = 0; i < m_galleryList->count(); ++i) {
+                    QListWidgetItem *wi = m_galleryList->item(i);
+                    if (wi && wi->data(Qt::UserRole).toString() == path) {
+                        wi->setIcon(QIcon(px));
+                        break;
+                    }
+                }
+            });
+
+    // The worker: load + scale entirely off the GUI thread
+    QFuture<QPixmap> future = QtConcurrent::run([path]() -> QPixmap {
+        QPixmap px(path);
+        if (px.isNull()) return {};
+        // Scale down to thumbnail size — do the heavy work here, not on GUI thread
+        return px.scaled(THUMB_W, THUMB_H,
+                         Qt::KeepAspectRatioByExpanding,
+                         Qt::SmoothTransformation);
+    });
+
+    watcher->setFuture(future);
+}
 
 // ============================================================
 // Instant apply helper
@@ -1207,6 +1246,8 @@ void MainWindow::onGalleryAdd()
 
 void MainWindow::onGalleryRemove(const QString &path)
 {
+    // Evict from cache when item is deleted
+    m_thumbCache.remove(path);
     ConfigManager::instance().removeFromGallery(path);
     refreshGallery();
     if (m_pending.contains(m_currentMonitor) &&
