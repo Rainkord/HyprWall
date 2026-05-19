@@ -1,9 +1,8 @@
 #pragma once
 #include <QMainWindow>
-#include <QList>
-#include <QMap>
 #include <QPoint>
-#include "MonitorDetector.h"
+#include <QMap>
+#include <QTimer>
 #include "Types.h"
 #include "Strings.h"
 
@@ -12,17 +11,16 @@ class QPushButton;
 class QComboBox;
 class QCheckBox;
 class QSlider;
-class QLineEdit;
 class QGroupBox;
 class QVBoxLayout;
-class QTimer;
+class QWidget;
 class MonitorBar;
+class ToggleSwitch;
 
-// Per-monitor slideshow runtime state
 struct MonitorSlideshowState {
-    bool  enabled       = false;
-    int   intervalSecs  = 300;
-    int   mediaMode     = 2;      // 0=photos, 1=videos, 2=both
+    bool    enabled     = false;
+    int     intervalSecs= 300;
+    int     mediaMode   = 2; // 0=photos,1=videos,2=both
     QTimer *timer       = nullptr;
 };
 
@@ -30,8 +28,10 @@ class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
     explicit MainWindow(QWidget *parent = nullptr);
+    bool eventFilter(QObject *obj, QEvent *ev) override;
 
     void onGalleryRemove(const QString &path);
+    void onGalleryItemClicked(const QString &path, bool isVideo);
 
     static const int INTERVAL_VALUES[6];
 
@@ -39,99 +39,98 @@ protected:
     void paintEvent(QPaintEvent *) override;
     void mousePressEvent(QMouseEvent *) override;
     void mouseMoveEvent(QMouseEvent *) override;
-    bool eventFilter(QObject *, QEvent *) override;
 
 private slots:
-    void onAutostartToggle();
     void onMonitorClicked(const QString &name);
+    void onAutostartToggle();
+    void onLanguageChanged(int idx);
     void onApplyAll();
-    void onGalleryAdd();
-    void onGalleryItemClicked(const QString &path, bool isVideo);
-    void onSlideshowToggled(bool checked);
     void onFillModeChanged(int);
     void onRotationChanged(int);
-    void onAudioToggled(bool checked);
-    void onVolumeChanged(int val);
-    void onLanguageChanged(int idx);
+    void onAudioToggled(bool);
+    void onVolumeChanged(int);
+    void onSlideshowToggled(bool);
+    void onGalleryAdd();
 
 private:
     void buildUi();
     void buildGalleryPanel(QVBoxLayout *parent);
-    void refreshGallery();
     void loadMonitors();
     void populateSettings(const QString &monitorName);
     void saveCurrentToPending();
-    void switchToVideo(bool isVideo);
     void retranslateUi();
-    void updateAutostartButton();
+    void updateAutostartSwitch();
+    void switchToVideo(bool isVideo);
     void updateSlideshowDependentWidgets(bool ssOn);
+    void refreshGallery();
     QString bindString() const;
     QString smartBrowseDir() const;
 
-    // Per-monitor slideshow helpers
+    // Per-monitor slideshow
     MonitorSlideshowState &slideshowState(const QString &monitor);
     void startSlideshowForMonitor(const QString &monitor);
     void stopSlideshowForMonitor(const QString &monitor);
     void tickMonitor(const QString &monitor);
+
+    // State
+    QList<MonitorInfo>  m_monitors;
+    QString             m_currentMonitor;
+    QPoint              m_dragPos;
+    Strings             m_s;
+    bool                m_isRU   = false;
+    bool                m_isVideo= false;
+    bool                m_updatingControls = false;
+    QMap<QString, WallpaperConfig>        m_pending;
+    QMap<QString, MonitorSlideshowState>  m_ssState;
 
     // UI
     MonitorBar   *m_monitorBar       = nullptr;
     QGroupBox    *m_settingsGroup    = nullptr;
     QLabel       *m_orientationLabel = nullptr;
 
-    // slideshow UI controls (reflect current monitor)
-    QCheckBox    *m_slideshowCheck     = nullptr;
-    QWidget      *m_timerRow           = nullptr;
-    QWidget      *m_mediaModeRow       = nullptr;
-    QLabel       *m_intervalPrefixLbl  = nullptr;
-    QLabel       *m_intervalSuffixLbl  = nullptr;
-    QComboBox    *m_intervalCombo      = nullptr;
-    QComboBox    *m_mediaModeCombo     = nullptr;
+    // Autostart toggle-switch
+    QLabel       *m_autostartLabel   = nullptr;
+    ToggleSwitch *m_autostartSwitch  = nullptr;
 
-    // gallery
-    QGroupBox    *m_galleryGroup    = nullptr;
-    QPushButton  *m_galleryAddBtn   = nullptr;
-    QWidget      *m_galleryGrid     = nullptr;
-    QLabel       *m_galleryEmptyLbl = nullptr;
+    QLabel       *m_langLabel        = nullptr;
+    QComboBox    *m_langCombo        = nullptr;
 
-    // audio
-    QWidget      *m_audioRow     = nullptr;
-    QCheckBox    *m_audioCheck   = nullptr;
-    QWidget      *m_volumeRow    = nullptr;
-    QLabel       *m_volumeLabelW = nullptr;
-    QSlider      *m_volumeSlider = nullptr;
-    QLabel       *m_volumeLabel  = nullptr;
+    // Slideshow controls
+    QCheckBox    *m_slideshowCheck   = nullptr;
+    QWidget      *m_timerRow         = nullptr;
+    QLabel       *m_intervalPrefixLbl= nullptr;
+    QComboBox    *m_intervalCombo    = nullptr;
+    QLabel       *m_intervalSuffixLbl= nullptr;
+    QWidget      *m_mediaModeRow     = nullptr;
+    QLabel       *m_mediaModeLabel   = nullptr;
+    QComboBox    *m_mediaModeCombo   = nullptr;
 
-    // fill / rotation
-    QWidget      *m_fillRow   = nullptr;
-    QLabel       *m_fillLabel = nullptr;
-    QComboBox    *m_fillCombo = nullptr;
-    QWidget      *m_rotRow    = nullptr;
-    QLabel       *m_rotLabel  = nullptr;
-    QComboBox    *m_rotCombo  = nullptr;
+    // Gallery
+    QGroupBox    *m_galleryGroup     = nullptr;
+    QPushButton  *m_galleryAddBtn    = nullptr;
+    QWidget      *m_galleryGrid      = nullptr;
+    QLabel       *m_galleryEmptyLbl  = nullptr;
 
-    // bind hint
-    QWidget      *m_bindRow         = nullptr;
-    QLabel       *m_bindPrefixLabel = nullptr;
-    QLabel       *m_bindHint        = nullptr;
+    // Audio / video
+    QWidget      *m_audioRow         = nullptr;
+    QCheckBox    *m_audioCheck       = nullptr;
+    QWidget      *m_volumeRow        = nullptr;
+    QLabel       *m_volumeLabelW     = nullptr;
+    QSlider      *m_volumeSlider     = nullptr;
+    QLabel       *m_volumeLabel      = nullptr;
 
-    // apply
-    QPushButton  *m_applyBtn = nullptr;
+    // Fill / rotation
+    QWidget      *m_fillRow          = nullptr;
+    QLabel       *m_fillLabel        = nullptr;
+    QComboBox    *m_fillCombo        = nullptr;
+    QWidget      *m_rotRow           = nullptr;
+    QLabel       *m_rotLabel         = nullptr;
+    QComboBox    *m_rotCombo         = nullptr;
 
-    // top bar
-    QLabel       *m_langLabel      = nullptr;
-    QComboBox    *m_langCombo      = nullptr;
-    QLabel       *m_autostartLabel = nullptr;
-    QPushButton  *m_autostartBtn   = nullptr;
+    // Bind hint
+    QWidget      *m_bindRow          = nullptr;
+    QLabel       *m_bindPrefixLabel  = nullptr;
+    QLabel       *m_bindHint         = nullptr;
 
-    // state
-    QList<MonitorInfo>                   m_monitors;
-    QString                              m_currentMonitor;
-    QMap<QString, WallpaperConfig>       m_pending;
-    QMap<QString, MonitorSlideshowState> m_ssState;  // per-monitor slideshow state
-    bool                                 m_updatingControls = false; // block signal loops
-    bool                                 m_isVideo = false;
-    bool                                 m_isRU    = false;
-    Strings                              m_s;
-    QPoint                               m_dragPos;
+    QPushButton  *m_applyBtn         = nullptr;
 };
