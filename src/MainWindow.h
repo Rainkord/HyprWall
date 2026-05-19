@@ -3,6 +3,7 @@
 #include <QPoint>
 #include <QMap>
 #include <QTimer>
+#include <QScrollArea>
 #include "Types.h"
 #include "Strings.h"
 
@@ -20,7 +21,7 @@ class ToggleSwitch;
 struct MonitorSlideshowState {
     bool    enabled     = false;
     int     intervalSecs= 300;
-    int     mediaMode   = 2; // 0=photos,1=videos,2=both
+    int     mediaMode   = 2; // 0=photos, 1=videos, 2=both
     QTimer *timer       = nullptr;
 };
 
@@ -58,6 +59,7 @@ private:
     void loadMonitors();
     void populateSettings(const QString &monitorName);
     void saveCurrentToPending();
+    void applyAndSaveCurrent();   // instant apply for all controls
     void retranslateUi();
     void updateAutostartSwitch();
     void switchToVideo(bool isVideo);
@@ -77,11 +79,11 @@ private:
     QString             m_currentMonitor;
     QPoint              m_dragPos;
     Strings             m_s;
-    bool                m_isRU   = false;
-    bool                m_isVideo= false;
+    bool                m_isRU            = false;
+    bool                m_isVideo         = false;
     bool                m_updatingControls = false;
-    QMap<QString, WallpaperConfig>        m_pending;
-    QMap<QString, MonitorSlideshowState>  m_ssState;
+    QMap<QString, WallpaperConfig>       m_pending;
+    QMap<QString, MonitorSlideshowState> m_ssState;
 
     // UI
     MonitorBar   *m_monitorBar       = nullptr;
@@ -96,18 +98,19 @@ private:
     QComboBox    *m_langCombo        = nullptr;
 
     // Slideshow controls
-    QCheckBox    *m_slideshowCheck   = nullptr;
-    QWidget      *m_timerRow         = nullptr;
-    QLabel       *m_intervalPrefixLbl= nullptr;
-    QComboBox    *m_intervalCombo    = nullptr;
-    QLabel       *m_intervalSuffixLbl= nullptr;
-    QWidget      *m_mediaModeRow     = nullptr;
-    QLabel       *m_mediaModeLabel   = nullptr;
-    QComboBox    *m_mediaModeCombo   = nullptr;
+    QCheckBox    *m_slideshowCheck    = nullptr;
+    QWidget      *m_timerRow          = nullptr;
+    QLabel       *m_intervalPrefixLbl = nullptr;
+    QComboBox    *m_intervalCombo     = nullptr;
+    QLabel       *m_intervalSuffixLbl = nullptr;
+    QWidget      *m_mediaModeRow      = nullptr;
+    QLabel       *m_mediaModeLabel    = nullptr;
+    QComboBox    *m_mediaModeCombo    = nullptr;
 
     // Gallery
     QGroupBox    *m_galleryGroup     = nullptr;
     QPushButton  *m_galleryAddBtn    = nullptr;
+    QScrollArea  *m_galleryScroll    = nullptr;  // adaptive height scroll area
     QWidget      *m_galleryGrid      = nullptr;
     QLabel       *m_galleryEmptyLbl  = nullptr;
 
@@ -131,6 +134,5 @@ private:
     QWidget      *m_bindRow          = nullptr;
     QLabel       *m_bindPrefixLabel  = nullptr;
     QLabel       *m_bindHint         = nullptr;
-
-    QPushButton  *m_applyBtn         = nullptr;
+    // NOTE: m_applyBtn removed — changes are now applied instantly
 };
