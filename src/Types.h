@@ -1,5 +1,6 @@
 #pragma once
 #include <QString>
+#include <QStringList>
 
 enum class FillMode {
     Cover,
@@ -33,4 +34,14 @@ struct WallpaperConfig {
     WallpaperRotation rotation   = WallpaperRotation::Normal;
     bool              audioEnabled = false;
     int               audioVolume  = 50;
+};
+
+struct GalleryItem {
+    QString path;     // absolute path inside gallery store
+    bool    isVideo = false;
+};
+
+struct SlideshowConfig {
+    bool    enabled      = false;
+    int     intervalSecs = 300;  // 5 min default
 };
