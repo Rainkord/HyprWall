@@ -4,8 +4,6 @@
 enum class FillMode {
     Cover,
     Contain,
-    Tile,
-    Fill,
 };
 
 enum class WallpaperRotation {
@@ -13,8 +11,6 @@ enum class WallpaperRotation {
     Clockwise90,
     Clockwise180,
     Clockwise270,
-    FlipHorizontal,
-    FlipVertical,
 };
 
 struct MonitorInfo {
