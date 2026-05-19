@@ -1,23 +1,25 @@
 #pragma once
 #include <QString>
 
-// hyprpaper поддерживает только: contain | cover | tile | fill
-// stretch/center/позиционирование — НЕ поддерживаются
 enum class FillMode {
-    Cover,    // заполнить (обрезает) — cover
-    Contain,  // вписать целиком — contain
-    Tile,     // плиткой — tile
-    Fill,     // растянуть под экран — fill
+    Cover,
+    Contain,
+    Tile,
+    Fill,
 };
 
-// Поворот обоев (выполняется программно через QImage)
 enum class WallpaperRotation {
-    Normal,           // 0°
-    Clockwise90,      // 90° по часовой
-    Clockwise180,     // 180°
-    Clockwise270,     // 270° по часовой
-    FlipHorizontal,   // зеркало горизонтально
-    FlipVertical,     // зеркало вертикально
+    Normal,
+    Clockwise90,
+    Clockwise180,
+    Clockwise270,
+    FlipHorizontal,
+    FlipVertical,
+};
+
+enum class WallpaperMode {
+    Static,    // single file
+    Slideshow, // folder with interval
 };
 
 struct MonitorInfo {
@@ -35,9 +37,12 @@ struct MonitorInfo {
 
 struct WallpaperConfig {
     QString           monitorName;
-    QString           filePath;
-    FillMode          fillMode   = FillMode::Cover;
-    WallpaperRotation rotation   = WallpaperRotation::Normal;
-    bool              audioEnabled = false;
-    int               audioVolume  = 50;
+    QString           filePath;       // for Static mode
+    QString           folderPath;     // for Slideshow mode
+    WallpaperMode     mode           = WallpaperMode::Static;
+    int               slideshowSecs  = 600; // seconds between changes
+    FillMode          fillMode       = FillMode::Cover;
+    WallpaperRotation rotation       = WallpaperRotation::Normal;
+    bool              audioEnabled   = false;
+    int               audioVolume    = 50;
 };
