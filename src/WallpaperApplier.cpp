@@ -10,15 +10,10 @@
 #include <QThread>
 #include <QImage>
 #include <QTransform>
-#include <QRandomGenerator>
 #include <QDebug>
 
 static const QStringList VIDEO_EXTS = {
     "mp4","mkv","avi","webm","mov","flv","wmv"
-};
-// Image extensions for slideshow
-static const QStringList IMG_EXTS = {
-    "jpg","jpeg","png","bmp","gif","webp"
 };
 
 bool WallpaperApplier::isVideoFile(const QString &path)
@@ -94,7 +89,71 @@ QString WallpaperApplier::prepareRotatedImage(const QString &src, WallpaperRotat
     return tmp;
 }
 
-// ── hyprpaper config writer ──────────────────────────────────────────────────
+// ── IPC helpers ─────────────────────────────────────────────────────────────
+static QString ipcRun(const QStringList &args)
+{
+    QProcess p;
+    p.start("hyprctl", args);
+    p.waitForFinished(4000);
+    return QString::fromUtf8(p.readAllStandardOutput()).trimmed();
+}
+
+static bool ipcOk(const QString &out)
+{
+    QString l = out.toLower();
+    return !l.startsWith("error") && !l.contains("invalid");
+}
+
+// Poll until hyprpaper IPC is ready (listloaded returns without error)
+static bool waitForHyprpaper(int maxMs = 5000)
+{
+    int waited = 0;
+    while (waited < maxMs) {
+        QThread::msleep(200);
+        waited += 200;
+        QString out = ipcRun({"hyprpaper", "listloaded"});
+        // listloaded returns empty string (no images loaded yet) or a list — both mean IPC is up
+        // It returns "error: ..." if hyprpaper socket not ready yet
+        if (!out.toLower().startsWith("error") && !out.toLower().contains("invalid")) {
+            qDebug() << "[IPC] hyprpaper ready after" << waited << "ms";
+            return true;
+        }
+    }
+    qWarning() << "[IPC] hyprpaper did not become ready in" << maxMs << "ms";
+    return false;
+}
+
+// Preload + set wallpaper via IPC. Returns true on success.
+static bool applyViaIPC(const QString &monitor, const QString &path)
+{
+    QString preOut = ipcRun({"hyprpaper", "preload", path});
+    qDebug() << "[IPC] preload" << path << "->" << preOut;
+    if (!preOut.isEmpty() && !ipcOk(preOut)) {
+        qWarning() << "[IPC] preload failed:" << preOut;
+        return false;
+    }
+    QString wpArg = monitor + "," + path;
+    QString wpOut = ipcRun({"hyprpaper", "wallpaper", wpArg});
+    qDebug() << "[IPC] wallpaper" << wpArg << "->" << wpOut;
+    if (!wpOut.isEmpty() && !ipcOk(wpOut)) {
+        qWarning() << "[IPC] wallpaper failed:" << wpOut;
+        return false;
+    }
+    return true;
+}
+
+static void ipcUnloadOthers(const QString &keepPath)
+{
+    QString loaded = ipcRun({"hyprpaper", "listloaded"});
+    if (loaded.isEmpty()) return;
+    for (const QString &line : loaded.split('\n', Qt::SkipEmptyParts)) {
+        QString img = line.trimmed();
+        if (!img.isEmpty() && img != keepPath)
+            ipcRun({"hyprpaper", "unload", img});
+    }
+}
+
+// Write hyprpaper.conf for ALL configured monitors
 static void writeHyprpaperConf(const QMap<QString, WallpaperConfig> &all)
 {
     QString confDir = QStandardPaths::writableLocation(QStandardPaths::ConfigLocation) + "/hypr";
@@ -109,64 +168,19 @@ static void writeHyprpaperConf(const QMap<QString, WallpaperConfig> &all)
         QString path = c.filePath;
         QString rot  = WallpaperApplier::prepareRotatedImage(path, c.rotation);
         if (!rot.isEmpty()) path = rot;
-        // hyprpaper.conf format: preload + wallpaper lines
         ts << "preload = " << path << "\n";
         ts << "wallpaper = " << c.monitorName << "," << path << "\n\n";
     }
 }
 
-// ── IPC helpers ─────────────────────────────────────────────────────────────
-// Returns trimmed stdout
-static QString ipcRun(const QStringList &args)
+// Restart hyprpaper and wait until IPC is ready
+static bool restartHyprpaper()
 {
-    QProcess p;
-    p.start("hyprctl", args);
-    p.waitForFinished(4000);
-    return QString::fromUtf8(p.readAllStandardOutput()).trimmed();
-}
-
-static bool ipcOk(const QString &out)
-{
-    // hyprpaper returns "ok" on success, or starts with "error"/"Error"
-    QString l = out.toLower();
-    return !l.startsWith("error") && !l.contains("invalid");
-}
-
-// Preload + set wallpaper via IPC. Returns true on success.
-static bool applyViaIPC(const QString &monitor, const QString &path)
-{
-    // 1. preload
-    QString preOut = ipcRun({"hyprpaper", "preload", path});
-    qDebug() << "[IPC] preload" << path << "->" << preOut;
-    // preload may return "ok" or empty; both fine. Error means path not found.
-    if (!preOut.isEmpty() && !ipcOk(preOut)) {
-        qWarning() << "[IPC] preload failed:" << preOut;
-        return false;
-    }
-
-    // 2. wallpaper  format: "monitor,path"  (no fitMode in IPC — only conf)
-    QString wpArg = monitor + "," + path;
-    QString wpOut = ipcRun({"hyprpaper", "wallpaper", wpArg});
-    qDebug() << "[IPC] wallpaper" << wpArg << "->" << wpOut;
-    if (!wpOut.isEmpty() && !ipcOk(wpOut)) {
-        qWarning() << "[IPC] wallpaper failed:" << wpOut;
-        return false;
-    }
-    return true;
-}
-
-// Unload every preloaded image except `keepPath` to avoid VRAM leak
-static void ipcUnloadOthers(const QString &keepPath)
-{
-    QString loaded = ipcRun({"hyprpaper", "listloaded"});
-    if (loaded.isEmpty()) return;
-    for (const QString &line : loaded.split('\n', Qt::SkipEmptyParts)) {
-        QString img = line.trimmed();
-        if (!img.isEmpty() && img != keepPath) {
-            ipcRun({"hyprpaper", "unload", img});
-            qDebug() << "[IPC] unloaded" << img;
-        }
-    }
+    QProcess::execute("pkill", {"-x", "hyprpaper"});
+    QThread::msleep(300);
+    bool started = QProcess::startDetached("hyprpaper", {});
+    if (!started) { qWarning() << "[apply] failed to start hyprpaper"; return false; }
+    return waitForHyprpaper(6000);
 }
 
 // ── public apply ────────────────────────────────────────────────────────────
@@ -174,7 +188,6 @@ bool WallpaperApplier::apply(const WallpaperConfig &cfg)
 {
     if (cfg.filePath.isEmpty()) { qWarning() << "apply: empty filePath"; return false; }
 
-    // Video: delegate to mpvpaper
     if (isVideoFile(cfg.filePath)) {
         stopVideo(cfg.monitorName);
         QString opts = mpvOptions(
@@ -187,12 +200,11 @@ bool WallpaperApplier::apply(const WallpaperConfig &cfg)
         return QProcess::startDetached("mpvpaper", args);
     }
 
-    // Image: prepare (rotate if needed)
     QString path = cfg.filePath;
     QString rotPath = prepareRotatedImage(path, cfg.rotation);
     if (!rotPath.isEmpty()) path = rotPath;
 
-    // Is hyprpaper running?
+    // Check if hyprpaper is running
     QProcess chk;
     chk.start("pgrep", {"-x", "hyprpaper"});
     chk.waitForFinished(1000);
@@ -203,74 +215,16 @@ bool WallpaperApplier::apply(const WallpaperConfig &cfg)
         return true;
     }
 
-    // IPC failed or hyprpaper not running: write conf and (re)start
+    // IPC failed or not running: write full conf and restart
     qDebug() << "[apply] (re)starting hyprpaper via conf";
-    auto &cm = ConfigManager::instance();
-    WallpaperConfig saved = cfg;
-    saved.filePath = path;   // use possibly-rotated path in conf
-    cm.setConfig(cfg.monitorName, saved);
-    writeHyprpaperConf(cm.configs());
-    QProcess::execute("pkill", {"-x", "hyprpaper"});
-    QThread::msleep(400);
-    return QProcess::startDetached("hyprpaper", {});
-}
+    writeHyprpaperConf(ConfigManager::instance().configs());
 
-// ── slideshow (pure C++) ─────────────────────────────────────────────────────
-QStringList WallpaperApplier::scanImageFolder(const QString &folder)
-{
-    QDir dir(folder);
-    if (!dir.exists()) return {};
-    QStringList nameFilters;
-    for (const QString &e : IMG_EXTS)
-        nameFilters << "*." + e;
-    QStringList files = dir.entryList(nameFilters, QDir::Files, QDir::Name);
-    QStringList result;
-    result.reserve(files.size());
-    for (const QString &f : files)
-        result << dir.absoluteFilePath(f);
-    return result;
-}
+    if (!restartHyprpaper()) return false;
 
-bool WallpaperApplier::applyRandomFromFolder(
-    const QString &monitor, const QString &folder,
-    const FillMode /*fill*/, const WallpaperRotation /*rot*/)
-{
-    QStringList files = scanImageFolder(folder);
-    if (files.isEmpty()) {
-        qWarning() << "[slideshow] No images in" << folder;
-        return false;
-    }
-    quint32 idx = QRandomGenerator::global()->bounded((quint32)files.size());
-    QString chosen = files[idx];
-    qDebug() << "[slideshow] ->" << chosen << "on" << monitor;
-
-    // Is hyprpaper running?
-    QProcess chk;
-    chk.start("pgrep", {"-x", "hyprpaper"});
-    chk.waitForFinished(1000);
-    bool running = !chk.readAllStandardOutput().trimmed().isEmpty();
-
-    if (running) {
-        if (applyViaIPC(monitor, chosen)) {
-            ipcUnloadOthers(chosen);
-            return true;
-        }
-        qDebug() << "[slideshow] IPC failed, restarting hyprpaper";
-    }
-
-    // fallback: write minimal conf and restart
-    QString confDir = QStandardPaths::writableLocation(QStandardPaths::ConfigLocation) + "/hypr";
-    QDir().mkpath(confDir);
-    QFile f(confDir + "/hyprpaper.conf");
-    if (f.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QTextStream ts(&f);
-        ts << "# Generated by HyprWall\nsplash = false\nipc = on\n\n";
-        ts << "preload = " << chosen << "\n";
-        ts << "wallpaper = " << monitor << "," << chosen << "\n";
-    }
-    QProcess::execute("pkill", {"-x", "hyprpaper"});
-    QThread::msleep(400);
-    return QProcess::startDetached("hyprpaper", {});
+    // Apply via IPC after restart (conf already set wallpapers, but send IPC too for confirmation)
+    bool ok = applyViaIPC(cfg.monitorName, path);
+    ipcUnloadOthers(path);
+    return ok;
 }
 
 void WallpaperApplier::stopVideo(const QString &monitor)
