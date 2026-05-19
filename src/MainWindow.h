@@ -18,6 +18,14 @@ class QVBoxLayout;
 class QTimer;
 class MonitorBar;
 
+// Per-monitor slideshow runtime state
+struct MonitorSlideshowState {
+    bool  enabled       = false;
+    int   intervalSecs  = 300;
+    int   mediaMode     = 2;      // 0=photos, 1=videos, 2=both
+    QTimer *timer       = nullptr;
+};
+
 class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
@@ -57,19 +65,21 @@ private:
     void retranslateUi();
     void updateAutostartButton();
     void updateSlideshowDependentWidgets(bool ssOn);
-    void startSlideshowTimer(const QString &monitor);
-    void stopSlideshowTimer(const QString &monitor);
-    void tickMonitor(const QString &monitor);
     QString bindString() const;
     QString smartBrowseDir() const;
-    bool isAutostartEnabled() const;
+
+    // Per-monitor slideshow helpers
+    MonitorSlideshowState &slideshowState(const QString &monitor);
+    void startSlideshowForMonitor(const QString &monitor);
+    void stopSlideshowForMonitor(const QString &monitor);
+    void tickMonitor(const QString &monitor);
 
     // UI
     MonitorBar   *m_monitorBar       = nullptr;
     QGroupBox    *m_settingsGroup    = nullptr;
     QLabel       *m_orientationLabel = nullptr;
 
-    // slideshow (controls for current monitor)
+    // slideshow UI controls (reflect current monitor)
     QCheckBox    *m_slideshowCheck     = nullptr;
     QWidget      *m_timerRow           = nullptr;
     QWidget      *m_mediaModeRow       = nullptr;
@@ -77,9 +87,6 @@ private:
     QLabel       *m_intervalSuffixLbl  = nullptr;
     QComboBox    *m_intervalCombo      = nullptr;
     QComboBox    *m_mediaModeCombo     = nullptr;
-
-    // per-monitor slideshow timers
-    QMap<QString, QTimer*> m_slideshowTimers;
 
     // gallery
     QGroupBox    *m_galleryGroup    = nullptr;
@@ -118,11 +125,13 @@ private:
     QPushButton  *m_autostartBtn   = nullptr;
 
     // state
-    QList<MonitorInfo>            m_monitors;
-    QString                       m_currentMonitor;
-    QMap<QString,WallpaperConfig> m_pending;
-    bool                          m_isVideo = false;
-    bool                          m_isRU    = false;
-    Strings                       m_s;
-    QPoint                        m_dragPos;
+    QList<MonitorInfo>                   m_monitors;
+    QString                              m_currentMonitor;
+    QMap<QString, WallpaperConfig>       m_pending;
+    QMap<QString, MonitorSlideshowState> m_ssState;  // per-monitor slideshow state
+    bool                                 m_updatingControls = false; // block signal loops
+    bool                                 m_isVideo = false;
+    bool                                 m_isRU    = false;
+    Strings                              m_s;
+    QPoint                               m_dragPos;
 };

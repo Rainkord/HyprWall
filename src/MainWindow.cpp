@@ -354,26 +354,57 @@ MainWindow::MainWindow(QWidget *parent)
     m_s = stringsEN();
     qApp->setStyleSheet(APP_STYLE);
 
-    m_slideshowTimer = new QTimer(this);
-    connect(m_slideshowTimer, &QTimer::timeout, this, &MainWindow::onSlideshowTick);
-
     ConfigManager::instance().load();
     buildUi();
     loadMonitors();
-
-    // restore slideshow state
-    SlideshowConfig ss = ConfigManager::instance().slideshowConfig();
-    m_slideshowCheck->setChecked(ss.enabled);
-    int sIdx = 1;
-    for (int i = 0; i < 6; ++i)
-        if (INTERVAL_VALUES[i] == ss.intervalSecs) { sIdx = i; break; }
-    m_intervalCombo->setCurrentIndex(sIdx);
-    m_intervalCombo->setEnabled(ss.enabled);
-    if (ss.enabled)
-        m_slideshowTimer->start(ss.intervalSecs * 1000);
-    updateSlideshowDependentWidgets(ss.enabled);
 }
 
+// ============================================================
+// Per-monitor slideshow helpers
+// ============================================================
+MonitorSlideshowState &MainWindow::slideshowState(const QString &monitor)
+{
+    return m_ssState[monitor];
+}
+
+void MainWindow::startSlideshowForMonitor(const QString &monitor)
+{
+    MonitorSlideshowState &ss = m_ssState[monitor];
+    if (!ss.timer) {
+        ss.timer = new QTimer(this);
+        ss.timer->setSingleShot(false);
+        // capture monitor name by value
+        connect(ss.timer, &QTimer::timeout, this, [this, monitor]{
+            tickMonitor(monitor);
+        });
+    }
+    ss.timer->setInterval(ss.intervalSecs * 1000);
+    ss.timer->start();
+    // fire immediately on start
+    tickMonitor(monitor);
+}
+
+void MainWindow::stopSlideshowForMonitor(const QString &monitor)
+{
+    if (m_ssState.contains(monitor)) {
+        MonitorSlideshowState &ss = m_ssState[monitor];
+        if (ss.timer) {
+            ss.timer->stop();
+        }
+    }
+}
+
+void MainWindow::tickMonitor(const QString &monitor)
+{
+    QList<GalleryItem> gallery = ConfigManager::instance().loadGallery();
+    if (gallery.isEmpty()) return;
+    int mode = m_ssState.contains(monitor) ? m_ssState[monitor].mediaMode : 2;
+    WallpaperApplier::applySlideshowTick(monitor, gallery, mode);
+}
+
+// ============================================================
+// Paint / drag
+// ============================================================
 void MainWindow::paintEvent(QPaintEvent *)
 {
     QPainter p(this);
@@ -414,6 +445,9 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *ev)
     return QMainWindow::eventFilter(obj, ev);
 }
 
+// ============================================================
+// Build UI
+// ============================================================
 void MainWindow::buildUi()
 {
     setWindowTitle(m_s.windowTitle);
@@ -522,17 +556,18 @@ void MainWindow::buildUi()
         m_intervalCombo = new QComboBox;
         m_intervalCombo->addItems(m_s.intervalLabels);
         m_intervalCombo->setCurrentIndex(1);
-        m_intervalCombo->setEnabled(false);
         m_intervalSuffixLbl = new QLabel(m_s.slideshowMinLabel);
         connect(m_intervalCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
                 [this](int idx){
-                    if (m_slideshowCheck->isChecked()) {
-                        int secs = INTERVAL_VALUES[idx];
-                        m_slideshowTimer->setInterval(secs * 1000);
-                        SlideshowConfig ss = ConfigManager::instance().slideshowConfig();
-                        ss.intervalSecs = secs;
-                        ConfigManager::instance().setSlideshowConfig(ss);
-                        ConfigManager::instance().save();
+                    if (m_updatingControls) return;
+                    if (m_currentMonitor.isEmpty()) return;
+                    int secs = INTERVAL_VALUES[idx];
+                    MonitorSlideshowState &ss = m_ssState[m_currentMonitor];
+                    ss.intervalSecs = secs;
+                    // update WallpaperConfig in pending
+                    m_pending[m_currentMonitor].slideshowInterval = secs;
+                    if (ss.timer && ss.timer->isActive()) {
+                        ss.timer->setInterval(secs * 1000);
                     }
                 });
         row->addWidget(m_intervalPrefixLbl);
@@ -552,6 +587,13 @@ void MainWindow::buildUi()
         lbl->setStyleSheet("color:#8b949e;");
         m_mediaModeCombo = new QComboBox;
         m_mediaModeCombo->addItems(m_s.slideshowModes);
+        connect(m_mediaModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                [this](int idx){
+                    if (m_updatingControls) return;
+                    if (m_currentMonitor.isEmpty()) return;
+                    m_ssState[m_currentMonitor].mediaMode = idx;
+                    m_pending[m_currentMonitor].slideshowMode = idx;
+                });
         row->addWidget(lbl);
         row->addWidget(m_mediaModeCombo, 1);
     }
@@ -756,7 +798,6 @@ void MainWindow::updateSlideshowDependentWidgets(bool ssOn)
     m_mediaModeRow->setVisible(ssOn);
     m_fillRow->setVisible(!ssOn);
     m_rotRow->setVisible(!ssOn);
-    // audio only relevant for single-file video, not slideshow
     if (ssOn) {
         m_audioRow->hide();
         m_volumeRow->hide();
@@ -849,6 +890,12 @@ void MainWindow::loadMonitors()
         WallpaperConfig cfg = cm.getConfig(m.name);
         cfg.monitorName = m.name;
         m_pending[m.name] = cfg;
+        // restore per-monitor slideshow state from saved config
+        MonitorSlideshowState &ss = m_ssState[m.name];
+        ss.enabled      = cfg.slideshowEnabled;
+        ss.intervalSecs = cfg.slideshowInterval;
+        ss.mediaMode    = cfg.slideshowMode;
+        if (ss.enabled) startSlideshowForMonitor(m.name);
         if (!cfg.filePath.isEmpty()) {
             bool vid = WallpaperApplier::isVideoFile(cfg.filePath);
             m_monitorBar->setMonitorMode(m.name, vid?1:0, vid?QString():cfg.filePath);
@@ -870,6 +917,8 @@ void MainWindow::onMonitorClicked(const QString &name)
 
 void MainWindow::populateSettings(const QString &monitorName)
 {
+    m_updatingControls = true;
+
     auto it = std::find_if(m_monitors.cbegin(), m_monitors.cend(),
         [&](const MonitorInfo &m){ return m.name == monitorName; });
     if (it != m_monitors.cend())
@@ -884,6 +933,19 @@ void MainWindow::populateSettings(const QString &monitorName)
         : ConfigManager::instance().getConfig(monitorName);
     cfg.monitorName = monitorName;
 
+    // Load per-monitor slideshow state into UI
+    const MonitorSlideshowState &ss = m_ssState.contains(monitorName)
+        ? m_ssState[monitorName] : MonitorSlideshowState{};
+
+    m_slideshowCheck->setChecked(ss.enabled);
+
+    // find interval index
+    int sIdx = 1;
+    for (int i = 0; i < 6; ++i)
+        if (INTERVAL_VALUES[i] == ss.intervalSecs) { sIdx = i; break; }
+    m_intervalCombo->setCurrentIndex(sIdx);
+    m_mediaModeCombo->setCurrentIndex(ss.mediaMode);
+
     bool isVid = WallpaperApplier::isVideoFile(cfg.filePath);
     m_isVideo = !isVid;
     switchToVideo(isVid);
@@ -896,13 +958,16 @@ void MainWindow::populateSettings(const QString &monitorName)
     m_volumeLabel->setText(QString("%1%").arg(cfg.audioVolume));
     m_fillCombo->blockSignals(false); m_rotCombo->blockSignals(false);
 
-    bool ssOn = m_slideshowCheck->isChecked();
-    m_audioRow->setVisible(isVid && !ssOn);
-    m_volumeRow->setVisible(isVid && cfg.audioEnabled && !ssOn);
-    if (isVid && !ssOn) { m_bindHint->setText(bindString()); m_bindRow->show(); }
-    else m_bindRow->hide();
+    updateSlideshowDependentWidgets(ss.enabled);
+    if (!ss.enabled) {
+        m_audioRow->setVisible(isVid);
+        m_volumeRow->setVisible(isVid && cfg.audioEnabled);
+        if (isVid) { m_bindHint->setText(bindString()); m_bindRow->show(); }
+        else m_bindRow->hide();
+    }
 
     m_monitorBar->setMonitorMode(monitorName, isVid?1:0, isVid?QString():cfg.filePath);
+    m_updatingControls = false;
 }
 
 void MainWindow::saveCurrentToPending()
@@ -916,6 +981,11 @@ void MainWindow::saveCurrentToPending()
     cfg.rotation     = static_cast<WallpaperRotation>(m_rotCombo->currentIndex());
     cfg.audioEnabled = m_audioCheck->isChecked();
     cfg.audioVolume  = m_volumeSlider->value();
+    // save per-monitor slideshow state into pending
+    const MonitorSlideshowState &ss = m_ssState[m_currentMonitor];
+    cfg.slideshowEnabled  = ss.enabled;
+    cfg.slideshowInterval = ss.intervalSecs;
+    cfg.slideshowMode     = ss.mediaMode;
     m_pending[m_currentMonitor] = cfg;
 }
 
@@ -926,7 +996,28 @@ void MainWindow::onApplyAll()
     for (auto it = m_pending.cbegin(); it != m_pending.cend(); ++it)
         cm.setConfig(it.key(), it.value());
     cm.save();
-    WallpaperApplier::applyAll(m_pending);
+
+    // Only apply static wallpapers via WallpaperApplier
+    // Slideshow monitors are handled by their timers
+    QMap<QString, WallpaperConfig> staticConfigs;
+    for (auto it = m_pending.cbegin(); it != m_pending.cend(); ++it) {
+        const MonitorSlideshowState &ss = m_ssState.value(it.key());
+        if (!ss.enabled)
+            staticConfigs[it.key()] = it.value();
+    }
+    if (!staticConfigs.isEmpty())
+        WallpaperApplier::applyAll(staticConfigs);
+
+    // Start/stop slideshow timers based on saved state
+    for (auto it = m_pending.cbegin(); it != m_pending.cend(); ++it) {
+        const QString &mon = it.key();
+        MonitorSlideshowState &ss = m_ssState[mon];
+        if (ss.enabled)
+            startSlideshowForMonitor(mon);
+        else
+            stopSlideshowForMonitor(mon);
+    }
+
     for (auto it = m_pending.cbegin(); it != m_pending.cend(); ++it) {
         bool vid = WallpaperApplier::isVideoFile(it.value().filePath);
         m_monitorBar->setMonitorMode(it.key(), vid?1:0,
@@ -950,7 +1041,6 @@ void MainWindow::onGalleryRemove(const QString &path)
 {
     ConfigManager::instance().removeFromGallery(path);
     refreshGallery();
-    // if removed file was pending for current monitor — clear it
     if (m_pending.contains(m_currentMonitor) &&
         m_pending[m_currentMonitor].filePath == path) {
         m_pending[m_currentMonitor].filePath.clear();
@@ -961,7 +1051,6 @@ void MainWindow::onGalleryRemove(const QString &path)
 void MainWindow::onGalleryItemClicked(const QString &path, bool isVideo)
 {
     if (m_currentMonitor.isEmpty()) return;
-    // store chosen path into pending
     if (!m_pending.contains(m_currentMonitor)) {
         WallpaperConfig cfg;
         cfg.monitorName = m_currentMonitor;
@@ -970,7 +1059,7 @@ void MainWindow::onGalleryItemClicked(const QString &path, bool isVideo)
     m_pending[m_currentMonitor].filePath = path;
 
     switchToVideo(isVideo);
-    bool ssOn = m_slideshowCheck->isChecked();
+    bool ssOn = m_ssState.value(m_currentMonitor).enabled;
     m_audioRow->setVisible(isVideo && !ssOn);
     m_volumeRow->setVisible(isVideo && m_audioCheck->isChecked() && !ssOn);
     if (isVideo && !ssOn) { m_bindHint->setText(bindString()); m_bindRow->show(); }
@@ -981,26 +1070,35 @@ void MainWindow::onGalleryItemClicked(const QString &path, bool isVideo)
 
 void MainWindow::onSlideshowToggled(bool checked)
 {
-    m_intervalCombo->setEnabled(checked);
-    updateSlideshowDependentWidgets(checked);
+    if (m_updatingControls) return;
+    if (m_currentMonitor.isEmpty()) return;
 
-    SlideshowConfig ss = ConfigManager::instance().slideshowConfig();
+    MonitorSlideshowState &ss = m_ssState[m_currentMonitor];
     ss.enabled = checked;
     ss.intervalSecs = INTERVAL_VALUES[m_intervalCombo->currentIndex()];
-    ConfigManager::instance().setSlideshowConfig(ss);
-    ConfigManager::instance().save();
+    ss.mediaMode    = m_mediaModeCombo->currentIndex();
 
-    if (checked)
-        m_slideshowTimer->start(ss.intervalSecs * 1000);
-    else
-        m_slideshowTimer->stop();
-}
+    // persist into pending immediately
+    if (m_pending.contains(m_currentMonitor)) {
+        m_pending[m_currentMonitor].slideshowEnabled  = checked;
+        m_pending[m_currentMonitor].slideshowInterval = ss.intervalSecs;
+        m_pending[m_currentMonitor].slideshowMode     = ss.mediaMode;
+    }
 
-void MainWindow::onSlideshowTick()
-{
-    QList<GalleryItem> gallery = ConfigManager::instance().loadGallery();
-    if (gallery.isEmpty()) return;
-    WallpaperApplier::applySlideshowRandom(m_monitors, gallery);
+    updateSlideshowDependentWidgets(checked);
+
+    if (checked) {
+        startSlideshowForMonitor(m_currentMonitor);
+    } else {
+        stopSlideshowForMonitor(m_currentMonitor);
+        // restore audio/fill/rot visibility based on current wallpaper type
+        bool isVid = m_pending.contains(m_currentMonitor) &&
+                     WallpaperApplier::isVideoFile(m_pending[m_currentMonitor].filePath);
+        m_audioRow->setVisible(isVid);
+        m_volumeRow->setVisible(isVid && m_audioCheck->isChecked());
+        if (isVid) { m_bindHint->setText(bindString()); m_bindRow->show(); }
+        else m_bindRow->hide();
+    }
 }
 
 void MainWindow::onFillModeChanged(int) {}
