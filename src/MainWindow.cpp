@@ -157,16 +157,25 @@ QPushButton {
 }
 QPushButton:hover { background: rgba(56,139,253,30); border: 1px solid #388bfd; color: #58a6ff; }
 QPushButton:pressed { background: rgba(56,139,253,20); }
+/* Gallery Add button — neutral, small, right-aligned */
 QPushButton#galleryAddBtn {
-    background: rgba(48,54,61,200);
+    background: rgba(33,38,45,200);
     border: 1px solid #30363d;
-    border-radius: 6px; color: #8b949e; font-weight: 500;
-    padding: 0 14px; min-height: 28px; max-height: 28px;
+    border-radius: 5px;
+    color: #8b949e;
+    font-weight: 400;
     font-size: 12px;
+    padding: 0 10px;
+    min-height: 24px; max-height: 24px;
+    min-width: 0;
 }
 QPushButton#galleryAddBtn:hover {
-    background: rgba(56,139,253,20);
-    border-color: #388bfd; color: #58a6ff;
+    background: rgba(48,54,61,220);
+    border-color: #484f58;
+    color: #c9d1d9;
+}
+QPushButton#galleryAddBtn:pressed {
+    background: rgba(40,46,54,230);
 }
 QPushButton#thumbRemove {
     background: rgba(218,54,51,160); border: none;
@@ -703,7 +712,7 @@ void MainWindow::buildGalleryPanel(QVBoxLayout *parent)
     vl->setSpacing(5);
     vl->setContentsMargins(8,14,8,8);
 
-    // Neutral Add button — small, right-aligned header row
+    // Neutral Add button — small, right-aligned, no stretch
     {
         QHBoxLayout *bar = new QHBoxLayout;
         bar->setContentsMargins(0,0,0,2);
@@ -711,8 +720,7 @@ void MainWindow::buildGalleryPanel(QVBoxLayout *parent)
         bar->addStretch();
         m_galleryAddBtn = new QPushButton(m_s.galleryAddBtn);
         m_galleryAddBtn->setObjectName("galleryAddBtn");
-        m_galleryAddBtn->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-        m_galleryAddBtn->setFixedHeight(28);
+        m_galleryAddBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
         connect(m_galleryAddBtn, &QPushButton::clicked, this, &MainWindow::onGalleryAdd);
         bar->addWidget(m_galleryAddBtn);
         vl->addLayout(bar);
@@ -774,30 +782,33 @@ void MainWindow::refreshGallery()
     }
     m_galleryEmptyLbl->hide();
 
-    // ── True adaptive grid ────────────────────────────────────
-    // Use viewport width; fall back to scrollarea width minus scrollbar
+    // ── True adaptive grid: fill all available width ──────────
+    // Read viewport width; the viewport is the real rendering area inside QScrollArea.
+    // We subtract 2px for a potential vertical scrollbar margin.
     const int SPACING = 4;
     const int MARGIN  = 4;
-    int vw = (m_galleryScroll->viewport())
-             ? m_galleryScroll->viewport()->width()
-             : (m_galleryScroll->width() - 16);
-    // If called before first paint viewport may report 0
-    if (vw < 80) vw = m_galleryScroll->width() - 16;
-    if (vw < 80) vw = width() - 48; // last resort: window width
+
+    // Measure available width from the viewport (most accurate)
+    int vw = 0;
+    if (m_galleryScroll->viewport())
+        vw = m_galleryScroll->viewport()->width();
+    if (vw < 80) vw = m_galleryScroll->width() - 2;
+    if (vw < 80) vw = width() - 48;
+
+    // We want at least ~90px per thumb; pack as many columns as possible
+    const int MIN_THUMB_W = 70;
     int availW = vw - 2 * MARGIN;
-
-    // Target thumb width ~90px; compute how many columns fit
-    const int TARGET_W = 90;
-    int COLS = std::max(2, (availW + SPACING) / (TARGET_W + SPACING));
-    // Recalculate exact thumb width so columns fill the full availW
+    // Compute maximum columns that give each thumb at least MIN_THUMB_W
+    int COLS = std::max(2, (availW + SPACING) / (MIN_THUMB_W + SPACING));
+    // Each column gets exactly equal width so they fill the full availW
     int thumbW = (availW - (COLS - 1) * SPACING) / COLS;
-    thumbW = std::max(56, thumbW);
-    int thumbH = (thumbW * 9) / 16; // 16:9 ratio
-    thumbH = std::max(40, thumbH);
+    if (thumbW < MIN_THUMB_W) { COLS = std::max(1, COLS - 1); thumbW = (availW - (COLS-1)*SPACING)/COLS; }
+    int thumbH = (thumbW * 9) / 16;  // 16:9
+    thumbH = std::max(44, thumbH);
 
-    int rows = (items.size() + COLS - 1) / COLS;
+    int rows  = (items.size() + COLS - 1) / COLS;
     int gridH = rows * (thumbH + SPACING) + 2 * MARGIN;
-    int saH = std::min(gridH + 4, 320);
+    int saH   = std::min(gridH + 4, 320);
     m_galleryScroll->setMinimumHeight(std::min(saH, thumbH + 2*MARGIN + 4));
     m_galleryScroll->setMaximumHeight(saH);
 
@@ -805,27 +816,34 @@ void MainWindow::refreshGallery()
     grid->setSpacing(SPACING);
     grid->setContentsMargins(MARGIN, MARGIN, MARGIN, MARGIN);
     grid->setAlignment(Qt::AlignTop | Qt::AlignLeft);
-    // Make all columns equal and stretch to fill available width
+    // Equal column stretch so items always fill full width
     for (int c = 0; c < COLS; ++c)
         grid->setColumnStretch(c, 1);
 
     int col = 0, row = 0;
     for (const GalleryItem &item : items) {
+        // Use a container that expands horizontally; height fixed via aspect ratio
         QWidget *thumb = new QWidget;
-        thumb->setFixedSize(thumbW, thumbH);
         thumb->setObjectName("galleryThumb");
         thumb->setProperty("ssLocked", ssLocked);
         thumb->setCursor(ssLocked ? Qt::ArrowCursor : Qt::PointingHandCursor);
         thumb->setToolTip(QFileInfo(item.path).fileName());
+        // Let Qt size the width from column stretch; fix the height
+        thumb->setMinimumHeight(thumbH);
+        thumb->setMaximumHeight(thumbH);
+        thumb->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
         QLabel *img = new QLabel(thumb);
-        img->setFixedSize(thumbW, thumbH);
+        img->setGeometry(0, 0, thumbW, thumbH);
         img->setAlignment(Qt::AlignCenter);
         img->setObjectName("thumbImg");
         img->setProperty("itemPath",    item.path);
         img->setProperty("itemIsVideo", item.isVideo);
-        // Install filter even when locked — we block in eventFilter
+        img->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
         img->installEventFilter(this);
+
+        // Resize img label to fill thumb on resize
+        thumb->installEventFilter(this);
 
         if (!item.isVideo) {
             QPixmap px(item.path);
@@ -845,17 +863,17 @@ void MainWindow::refreshGallery()
         // Dim overlay when locked
         if (ssLocked) {
             QLabel *overlay = new QLabel(thumb);
-            overlay->setFixedSize(thumbW, thumbH);
+            overlay->setGeometry(0, 0, thumbW, thumbH);
             overlay->setStyleSheet("background:rgba(13,17,23,120);");
             overlay->raise();
         }
 
         QPushButton *del = new QPushButton("\u00d7", thumb);
         del->setFixedSize(18, 18);
-        del->move(thumbW - 18, 0);
+        del->move(thumbW - 20, 2);
         del->setObjectName("thumbRemove");
         del->setToolTip(m_s.galleryRemoveTooltip);
-        del->raise(); // always above dim overlay
+        del->raise();
         const QString pathCopy = item.path;
         QObject::connect(del, &QPushButton::clicked, [this, pathCopy]{
             onGalleryRemove(pathCopy);
@@ -956,7 +974,6 @@ void MainWindow::retranslateUi()
     m_intervalSuffixLbl->setText(m_s.slideshowMinLabel);
     m_mediaModeLabel->setText(m_s.slideshowModeLabel);
 
-    // Retranslate media mode combo (RU/EN)
     int mi = m_mediaModeCombo->currentIndex();
     m_mediaModeCombo->blockSignals(true);
     m_mediaModeCombo->clear();
@@ -964,7 +981,6 @@ void MainWindow::retranslateUi()
     m_mediaModeCombo->setCurrentIndex(std::max(0, mi));
     m_mediaModeCombo->blockSignals(false);
 
-    // Interval combo
     int ci = m_intervalCombo->currentIndex();
     m_intervalCombo->blockSignals(true);
     m_intervalCombo->clear();
@@ -972,7 +988,6 @@ void MainWindow::retranslateUi()
     m_intervalCombo->setCurrentIndex(std::max(0, ci));
     m_intervalCombo->blockSignals(false);
 
-    // Fill / rot combos
     int fi = m_fillCombo->currentIndex(), ri = m_rotCombo->currentIndex();
     m_fillCombo->blockSignals(true); m_rotCombo->blockSignals(true);
     m_fillCombo->clear(); m_rotCombo->clear();
@@ -1062,7 +1077,6 @@ void MainWindow::populateSettings(const QString &monitorName)
     const MonitorSlideshowState &ss = m_ssState.contains(monitorName)
         ? m_ssState[monitorName] : MonitorSlideshowState{};
 
-    // Slideshow switch
     {
         QSignalBlocker b(m_slideshowSwitch);
         m_slideshowSwitch->setChecked(ss.enabled, false);
