@@ -3,6 +3,7 @@
 #include <QPoint>
 #include <QMap>
 #include <QTimer>
+#include <QPixmap>
 #include "Types.h"
 #include "Strings.h"
 
@@ -65,6 +66,7 @@ private:
     void switchToVideo(bool isVideo);
     void updateSlideshowDependentWidgets(bool ssOn);
     void refreshGallery();
+    void loadThumbAsync(const QString &path, int generation);
     QString bindString() const;
     QString smartBrowseDir() const;
 
@@ -84,6 +86,13 @@ private:
     bool                m_updatingControls = false;
     QMap<QString, WallpaperConfig>       m_pending;
     QMap<QString, MonitorSlideshowState> m_ssState;
+
+    // Thumbnail cache: path -> scaled QPixmap (THUMB_W x THUMB_H)
+    // Populated lazily by background threads; never cleared mid-session
+    // (removed only when item is deleted from gallery)
+    QMap<QString, QPixmap> m_thumbCache;
+    // Incremented on every refreshGallery() so stale async results are ignored
+    int m_thumbGeneration = 0;
 
     // UI
     MonitorBar   *m_monitorBar       = nullptr;
@@ -113,7 +122,7 @@ private:
     // Gallery — QListWidget in IconMode (no manual grid math)
     QGroupBox    *m_galleryGroup     = nullptr;
     QPushButton  *m_galleryAddBtn    = nullptr;
-    QListWidget  *m_galleryList      = nullptr;   // replaces m_galleryScroll/m_galleryGrid
+    QListWidget  *m_galleryList      = nullptr;
     QLabel       *m_galleryEmptyLbl  = nullptr;
 
     // Audio / video
