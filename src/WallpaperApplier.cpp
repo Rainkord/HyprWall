@@ -13,7 +13,7 @@
 #include <QDebug>
 
 static const QStringList VIDEO_EXTS = {
-    "mp4","mkv","avi","webm","mov","flv","wmv"
+    "mp4","mkv","avi","webm","mov","gif","flv","wmv"
 };
 
 bool WallpaperApplier::isVideoFile(const QString &path)
@@ -43,6 +43,7 @@ static QString mpvOptions(int fillIdx, int rotIdx, bool audio, int volume)
         default: opts << "--keepaspect=yes"; break;
     }
     switch (rotIdx) {
+        case 0: break;
         case 1: opts << "--video-rotate=90";  break;
         case 2: opts << "--video-rotate=180"; break;
         case 3: opts << "--video-rotate=270"; break;
@@ -62,132 +63,53 @@ QString WallpaperApplier::prepareRotatedImage(const QString &src, WallpaperRotat
     if (rot == WallpaperRotation::Normal) return QString();
     QImage img(src);
     if (img.isNull()) { qWarning() << "prepareRotatedImage: cannot load" << src; return QString(); }
-    QImage result;
+    QTransform t;
+    bool mirrorH = false, mirrorV = false;
     switch (rot) {
-        case WallpaperRotation::Clockwise90: {
-            QTransform t; t.rotate(90);
-            result = img.transformed(t, Qt::SmoothTransformation); break;
-        }
-        case WallpaperRotation::Clockwise180: {
-            QTransform t; t.rotate(180);
-            result = img.transformed(t, Qt::SmoothTransformation); break;
-        }
-        case WallpaperRotation::Clockwise270: {
-            QTransform t; t.rotate(270);
-            result = img.transformed(t, Qt::SmoothTransformation); break;
-        }
-        case WallpaperRotation::FlipHorizontal:
-            result = img.flipped(Qt::Horizontal); break;
-        case WallpaperRotation::FlipVertical:
-            result = img.flipped(Qt::Vertical); break;
-        default: return QString();
+        case WallpaperRotation::Clockwise90:    t.rotate(90);   break;
+        case WallpaperRotation::Clockwise180:   t.rotate(180);  break;
+        case WallpaperRotation::Clockwise270:   t.rotate(270);  break;
+        case WallpaperRotation::FlipHorizontal: mirrorH = true; break;
+        case WallpaperRotation::FlipVertical:   mirrorV = true; break;
+        default: break;
     }
+    QImage result = (mirrorH || mirrorV)
+        ? img.mirrored(mirrorH, mirrorV)
+        : img.transformed(t, Qt::SmoothTransformation);
     QString cacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + "/HyprWall";
     QDir().mkpath(cacheDir);
     QString tmp = cacheDir + "/" + QFileInfo(src).baseName() + "_rot.png";
     if (!result.save(tmp, "PNG")) { qWarning() << "prepareRotatedImage: save failed" << tmp; return QString(); }
+    qDebug() << "Rotated image ->" << tmp;
     return tmp;
 }
 
-// ── IPC helpers ────────────────────────────────────────────────────────────
-static QString ipcRun(const QStringList &args)
-{
-    QProcess p;
-    p.start("hyprctl", args);
-    p.waitForFinished(4000);
-    return QString::fromUtf8(p.readAllStandardOutput()).trimmed();
-}
-
-static bool ipcOk(const QString &out)
-{
-    QString l = out.toLower();
-    return !l.startsWith("error") && !l.contains("invalid");
-}
-
-static bool waitForHyprpaper(int maxMs = 6000)
-{
-    int waited = 0;
-    while (waited < maxMs) {
-        QThread::msleep(250);
-        waited += 250;
-        QString out = ipcRun({"hyprpaper", "listloaded"});
-        if (!out.toLower().startsWith("error") && !out.toLower().contains("invalid")) {
-            qDebug() << "[IPC] hyprpaper ready after" << waited << "ms, listloaded:" << out;
-            return true;
-        }
-    }
-    qWarning() << "[IPC] hyprpaper did not become ready in" << maxMs << "ms";
-    return false;
-}
-
-static bool applyViaIPC(const QString &monitor, const QString &path)
-{
-    QString preOut = ipcRun({"hyprpaper", "preload", path});
-    qDebug() << "[IPC] preload" << path << "->" << preOut;
-    if (!preOut.isEmpty() && !ipcOk(preOut)) {
-        qWarning() << "[IPC] preload failed:" << preOut;
-        return false;
-    }
-    QString wpArg = monitor + "," + path;
-    QString wpOut = ipcRun({"hyprpaper", "wallpaper", wpArg});
-    qDebug() << "[IPC] wallpaper" << wpArg << "->" << wpOut;
-    if (!wpOut.isEmpty() && !ipcOk(wpOut)) {
-        qWarning() << "[IPC] wallpaper failed:" << wpOut;
-        return false;
-    }
-    return true;
-}
-
-static void ipcUnloadOthers(const QString &keepPath)
-{
-    QString loaded = ipcRun({"hyprpaper", "listloaded"});
-    if (loaded.isEmpty()) return;
-    for (const QString &line : loaded.split('\n', Qt::SkipEmptyParts)) {
-        QString img = line.trimmed();
-        if (!img.isEmpty() && img != keepPath)
-            ipcRun({"hyprpaper", "unload", img});
-    }
-}
-
-// Write hyprpaper.conf for ALL configured monitors and return the conf path
-static QString writeHyprpaperConf(const QMap<QString, WallpaperConfig> &all)
+// Hyprpaper block-format config (the format that actually works)
+static void writeHyprpaperConf(const QMap<QString, WallpaperConfig> &all)
 {
     QString confDir = QStandardPaths::writableLocation(QStandardPaths::ConfigLocation) + "/hypr";
     QDir().mkpath(confDir);
-    QString confPath = confDir + "/hyprpaper.conf";
-    QFile f(confPath);
-    if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        qWarning() << "[conf] cannot write" << confPath;
-        return {};
-    }
+    QFile f(confDir + "/hyprpaper.conf");
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) return;
     QTextStream ts(&f);
-    ts << "# Generated by HyprWall\nsplash = false\nipc = on\n\n";
+    ts << "# Generated by HyprWall\n\nsplash = false\n\n";
     for (auto it = all.cbegin(); it != all.cend(); ++it) {
         const WallpaperConfig &c = it.value();
         if (c.filePath.isEmpty() || WallpaperApplier::isVideoFile(c.filePath)) continue;
         QString path = c.filePath;
-        QString rot  = WallpaperApplier::prepareRotatedImage(path, c.rotation);
+        QString rot = WallpaperApplier::prepareRotatedImage(path, c.rotation);
         if (!rot.isEmpty()) path = rot;
-        ts << "preload = " << path << "\n";
-        ts << "wallpaper = " << c.monitorName << "," << path << "\n\n";
+        ts << "wallpaper {\n"
+           << "    monitor = " << c.monitorName << "\n"
+           << "    path = " << path << "\n"
+           << "    fit_mode = " << WallpaperApplier::fillModeToHyprpaper(c.fillMode) << "\n"
+           << "}\n\n";
         qDebug() << "[conf] monitor" << c.monitorName << "->" << path;
     }
     f.close();
-    qDebug() << "[conf] written to" << confPath;
-    return confPath;
+    qDebug() << "[conf] written to" << (confDir + "/hyprpaper.conf");
 }
 
-static bool restartHyprpaper()
-{
-    QProcess::execute("pkill", {"-x", "hyprpaper"});
-    QThread::msleep(400);
-    bool started = QProcess::startDetached("hyprpaper", {});
-    if (!started) { qWarning() << "[apply] failed to start hyprpaper"; return false; }
-    qDebug() << "[apply] hyprpaper started, waiting for IPC...";
-    return waitForHyprpaper(6000);
-}
-
-// ── public apply ────────────────────────────────────────────────────────────
 bool WallpaperApplier::apply(const WallpaperConfig &cfg)
 {
     if (cfg.filePath.isEmpty()) { qWarning() << "apply: empty filePath"; return false; }
@@ -207,35 +129,36 @@ bool WallpaperApplier::apply(const WallpaperConfig &cfg)
     QString path = cfg.filePath;
     QString rotPath = prepareRotatedImage(path, cfg.rotation);
     if (!rotPath.isEmpty()) path = rotPath;
+    QString fitMode = fillModeToHyprpaper(cfg.fillMode);
 
-    // Ensure this monitor's config is in ConfigManager before writing conf
-    auto &cm = ConfigManager::instance();
+    bool running = false;
     {
-        WallpaperConfig saved = cfg;
-        saved.filePath = path;
-        cm.setConfig(cfg.monitorName, saved);
+        QProcess chk;
+        chk.start("pgrep", {"-x", "hyprpaper"});
+        chk.waitForFinished(1000);
+        running = !chk.readAllStandardOutput().trimmed().isEmpty();
     }
 
-    // Check if hyprpaper is running and IPC works
-    QProcess chk;
-    chk.start("pgrep", {"-x", "hyprpaper"});
-    chk.waitForFinished(1000);
-    bool running = !chk.readAllStandardOutput().trimmed().isEmpty();
-
-    if (running && applyViaIPC(cfg.monitorName, path)) {
-        ipcUnloadOthers(path);
-        return true;
+    if (running) {
+        // Try IPC first (no preload needed for block-format conf)
+        QString ipcArg = QString("%1, %2, %3").arg(cfg.monitorName, path, fitMode);
+        QProcess p;
+        p.start("hyprctl", {"hyprpaper", "wallpaper", ipcArg});
+        p.waitForFinished(3000);
+        QString out = p.readAllStandardOutput().trimmed();
+        qDebug() << "IPC ->" << (out.isEmpty() ? "(empty=ok)" : out);
+        if (!out.toLower().contains("error") && !out.toLower().contains("bad"))
+            return true;
+        qDebug() << "IPC failed, restarting hyprpaper...";
     }
 
-    // IPC failed or not running: write full conf for all monitors, then restart
-    qDebug() << "[apply] (re)starting hyprpaper via conf for" << cm.configs().size() << "monitor(s)";
+    auto &cm = ConfigManager::instance();
+    cm.setConfig(cfg.monitorName, cfg);
     writeHyprpaperConf(cm.configs());
-
-    if (!restartHyprpaper()) return false;
-
-    // After restart conf already applied wallpapers; send IPC too for current monitor
-    bool ok = applyViaIPC(cfg.monitorName, path);
-    ipcUnloadOthers(path);
+    QProcess::execute("pkill", {"-x", "hyprpaper"});
+    QThread::msleep(400);
+    bool ok = QProcess::startDetached("hyprpaper", {});
+    qDebug() << "hyprpaper restarted:" << ok;
     return ok;
 }
 
