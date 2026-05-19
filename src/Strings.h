@@ -28,6 +28,17 @@ struct Strings {
     QStringList vidFillModes;
     QStringList imgRotModes;
     QStringList vidRotModes;
+    // Gallery
+    QString galleryTitle;
+    QString galleryAddBtn;
+    QString galleryEmptyHint;
+    QString galleryRemoveTooltip;
+    // Slideshow
+    QString slideshowLabel;
+    QString slideshowIntervalLabel;   // "every X min"
+    QString slideshowMinLabel;        // "min"
+    // Interval preset labels
+    QStringList intervalLabels;
 };
 
 inline Strings stringsEN()
@@ -36,16 +47,16 @@ inline Strings stringsEN()
     s.windowTitle      = "HyprWall";
     s.noMonitors       = "No monitors detected";
     s.groupTitle       = "WALLPAPER SETTINGS";
-    s.fileLabel        = "File:";
+    s.fileLabel        = "Wallpaper:";
     s.browseBtn        = "Browse";
     s.audioCheck       = "Enable audio";
     s.volumeLabel      = "Volume:";
     s.fillLabel        = "Fill:";
     s.rotLabel         = "Rotation:";
-    s.applyBtn         = "Apply";
+    s.applyBtn         = "Apply to all monitors";
     s.bindPrefix       = "Hyprland audio toggle bind:";
     s.errTitle         = "Error";
-    s.errBody          = "Failed to apply wallpaper. Is hyprpaper running?";
+    s.errBody          = "Failed to apply wallpaper. Is hyprpaper/mpvpaper running?";
     s.langLabel        = "Lang:";
     s.autostartLabel   = "Autostart:";
     s.autostartEnable  = "Enable";
@@ -58,6 +69,16 @@ inline Strings stringsEN()
     s.vidFillModes = { "Cover (pan)", "Contain" };
     s.imgRotModes  = { "0\u00b0", "90\u00b0", "180\u00b0", "270\u00b0" };
     s.vidRotModes  = { "0\u00b0", "90\u00b0", "180\u00b0", "270\u00b0" };
+    // Gallery
+    s.galleryTitle         = "WALLPAPER GALLERY";
+    s.galleryAddBtn        = "+ Add";
+    s.galleryEmptyHint     = "Click \u201c+ Add\u201d to import wallpapers";
+    s.galleryRemoveTooltip = "Remove from gallery";
+    // Slideshow
+    s.slideshowLabel         = "Slideshow";
+    s.slideshowIntervalLabel = "every";
+    s.slideshowMinLabel      = "min";
+    s.intervalLabels = { "1", "5", "10", "15", "30", "60" };
     return s;
 }
 
@@ -67,27 +88,37 @@ inline Strings stringsRU()
     s.windowTitle      = "HyprWall";
     s.noMonitors       = "\u041c\u043e\u043d\u0438\u0442\u043e\u0440\u044b \u043d\u0435 \u043e\u0431\u043d\u0430\u0440\u0443\u0436\u0435\u043d\u044b";
     s.groupTitle       = "\u041d\u0410\u0421\u0422\u0420\u041e\u0419\u041a\u0410 \u041e\u0411\u041e\u0415\u0412";
-    s.fileLabel        = "\u0424\u0430\u0439\u043b:";
+    s.fileLabel        = "\u041e\u0431\u043e\u0438:";
     s.browseBtn        = "\u041e\u0431\u0437\u043e\u0440";
-    s.audioCheck       = "\u0412\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0430\u0443\u0434\u0438\u043e";
+    s.audioCheck       = "\u0412\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0437\u0432\u0443\u043a";
     s.volumeLabel      = "\u0413\u0440\u043e\u043c\u043a\u043e\u0441\u0442\u044c:";
     s.fillLabel        = "\u0417\u0430\u043f\u043e\u043b\u043d\u0435\u043d\u0438\u0435:";
     s.rotLabel         = "\u041f\u043e\u0432\u043e\u0440\u043e\u0442:";
-    s.applyBtn         = "\u041f\u0440\u0438\u043c\u0435\u043d\u0438\u0442\u044c";
-    s.bindPrefix       = "\u0411\u0438\u043d\u0434 \u0430\u0443\u0434\u0438\u043e (Hyprland):";
+    s.applyBtn         = "\u041f\u0440\u0438\u043c\u0435\u043d\u0438\u0442\u044c \u043a\u043e \u0432\u0441\u0435\u043c \u044d\u043a\u0440\u0430\u043d\u0430\u043c";
+    s.bindPrefix       = "\u0411\u0438\u043d\u0434 Hyprland \u0434\u043b\u044f \u0437\u0432\u0443\u043a\u0430 \u0432\u0438\u0434\u0435\u043e:";
     s.errTitle         = "\u041e\u0448\u0438\u0431\u043a\u0430";
-    s.errBody          = "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u043f\u0440\u0438\u043c\u0435\u043d\u0438\u0442\u044c \u043e\u0431\u043e\u0438. \u0417\u0430\u043f\u0443\u0449\u0435\u043d \u043b\u0438 hyprpaper?";
+    s.errBody          = "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0443\u0441\u0442\u0430\u043d\u043e\u0432\u0438\u0442\u044c \u043e\u0431\u043e\u0438. \u0417\u0430\u043f\u0443\u0449\u0435\u043d hyprpaper/mpvpaper?";
     s.langLabel        = "\u042f\u0437\u044b\u043a:";
-    s.autostartLabel   = "\u0410\u0432\u0442\u043e\u0437\u0430\u043f\u0443\u0441\u043a:";
+    s.autostartLabel   = "\u0410\u0432\u0442\u043e\u0441\u0442\u0430\u0440\u0442:";
     s.autostartEnable  = "\u0412\u043a\u043b\u044e\u0447\u0438\u0442\u044c";
-    s.autostartDisable = "\u0412\u044b\u043a\u043b\u044e\u0447\u0438\u0442\u044c";
+    s.autostartDisable = "\u041e\u0442\u043a\u043b\u044e\u0447\u0438\u0442\u044c";
     s.orientLandscape    = "\u0413\u043e\u0440\u0438\u0437\u043e\u043d\u0442\u0430\u043b\u044c";
     s.orientPortrait90   = "\u041f\u043e\u0440\u0442\u0440\u0435\u0442 90\u00b0";
     s.orientLandscape180 = "\u0413\u043e\u0440\u0438\u0437\u043e\u043d\u0442\u0430\u043b\u044c 180\u00b0";
     s.orientPortrait270  = "\u041f\u043e\u0440\u0442\u0440\u0435\u0442 270\u00b0";
-    s.imgFillModes = { "\u0417\u0430\u043f\u043e\u043b\u043d\u0438\u0442\u044c", "\u0412\u043f\u0438\u0441\u0430\u0442\u044c" };
-    s.vidFillModes = { "\u0417\u0430\u043f\u043e\u043b\u043d\u0438\u0442\u044c", "\u0412\u043f\u0438\u0441\u0430\u0442\u044c" };
+    s.imgFillModes = { "\u0417\u0430\u043f\u043e\u043b\u043d\u0435\u043d\u0438\u0435", "\u0412\u043f\u0438\u0441\u0430\u0442\u044c" };
+    s.vidFillModes = { "\u0417\u0430\u043f\u043e\u043b\u043d\u0435\u043d\u0438\u0435 (pan)", "\u0412\u043f\u0438\u0441\u0430\u0442\u044c" };
     s.imgRotModes  = { "0\u00b0", "90\u00b0", "180\u00b0", "270\u00b0" };
-    s.vidRotModes  = s.imgRotModes;
+    s.vidRotModes  = { "0\u00b0", "90\u00b0", "180\u00b0", "270\u00b0" };
+    // Gallery
+    s.galleryTitle         = "\u0413\u0410\u041b\u0415\u0420\u0415\u042f \u041e\u0411\u041e\u0415\u0412";
+    s.galleryAddBtn        = "+ \u0414\u043e\u0431\u0430\u0432\u0438\u0442\u044c";
+    s.galleryEmptyHint     = "\u041d\u0430\u0436\u043c\u0438\u0442\u0435 \u00ab+ \u0414\u043e\u0431\u0430\u0432\u0438\u0442\u044c\u00bb \u0447\u0442\u043e\u0431\u044b \u0438\u043c\u043f\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u043e\u0431\u043e\u0438";
+    s.galleryRemoveTooltip = "\u0423\u0434\u0430\u043b\u0438\u0442\u044c \u0438\u0437 \u0433\u0430\u043b\u0435\u0440\u0435\u0438";
+    // Slideshow
+    s.slideshowLabel         = "\u0421\u043b\u0430\u0439\u0434-\u0448\u043e\u0443";
+    s.slideshowIntervalLabel = "\u043a\u0430\u0436\u0434\u044b\u0435";
+    s.slideshowMinLabel      = "\u043c\u0438\u043d";
+    s.intervalLabels = { "1", "5", "10", "15", "30", "60" };
     return s;
 }
