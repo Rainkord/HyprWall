@@ -4,6 +4,7 @@
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QFormLayout>
 #include <QFileDialog>
 #include <QLabel>
 #include <QPainter>
@@ -23,10 +24,16 @@
 #include <QRadioButton>
 #include <QButtonGroup>
 #include <QStackedWidget>
+#include <QSizePolicy>
 #include <algorithm>
 #include <climits>
 
 const int MainWindow::INTERVAL_SECS[4] = { 600, 1200, 1800, 3600 };
+
+// Fixed heights for uniform rows
+static const int ROW_H    = 32;  // input/combo height
+static const int BTN_W    = 80;  // browse button width
+static const int LABEL_W  = 90;  // label column width
 
 static const char *APP_STYLE = R"(
 * {
@@ -63,7 +70,7 @@ QWidget#modeBar {
 QRadioButton {
     spacing: 6px;
     color: #8b949e;
-    padding: 4px 8px;
+    padding: 4px 10px;
     border-radius: 5px;
 }
 QRadioButton:checked {
@@ -84,10 +91,12 @@ QLineEdit {
     background: rgba(13, 17, 23, 200);
     border: 1px solid #30363d;
     border-radius: 6px;
-    padding: 5px 10px;
+    padding: 0px 10px;
     color: #c9d1d9;
     selection-background-color: #388bfd;
     selection-color: #ffffff;
+    min-height: 32px;
+    max-height: 32px;
 }
 QLineEdit:focus {
     border: 1px solid #58a6ff;
@@ -97,9 +106,10 @@ QComboBox {
     background: rgba(22, 27, 34, 220);
     border: 1px solid #30363d;
     border-radius: 6px;
-    padding: 5px 10px;
+    padding: 0px 10px;
     color: #c9d1d9;
-    min-height: 26px;
+    min-height: 32px;
+    max-height: 32px;
 }
 QComboBox:hover { border: 1px solid #58a6ff; }
 QComboBox::drop-down { border: none; width: 22px; }
@@ -124,9 +134,11 @@ QPushButton {
     background: rgba(48, 54, 61, 220);
     border: 1px solid #30363d;
     border-radius: 6px;
-    padding: 6px 16px;
+    padding: 0px 16px;
     color: #c9d1d9;
     font-weight: 500;
+    min-height: 32px;
+    max-height: 32px;
 }
 QPushButton:hover {
     background: rgba(56, 139, 253, 30);
@@ -141,7 +153,9 @@ QPushButton#applyBtn {
     color: #ffffff;
     font-weight: 600;
     font-size: 14px;
-    padding: 9px 0;
+    min-height: 40px;
+    max-height: 40px;
+    padding: 0;
     letter-spacing: 0.5px;
 }
 QPushButton#applyBtn:hover { background: #2ea043; }
@@ -152,7 +166,8 @@ QPushButton#autostartEnableBtn {
     border-radius: 6px;
     color: #3fb950;
     font-weight: 500;
-    padding: 5px 12px;
+    padding: 0 12px;
+    min-height: 28px; max-height: 28px;
 }
 QPushButton#autostartEnableBtn:hover { background: rgba(35,134,54,80); border-color: #3fb950; }
 QPushButton#autostartDisableBtn {
@@ -161,12 +176,14 @@ QPushButton#autostartDisableBtn {
     border-radius: 6px;
     color: #f85149;
     font-weight: 500;
-    padding: 5px 12px;
+    padding: 0 12px;
+    min-height: 28px; max-height: 28px;
 }
 QPushButton#autostartDisableBtn:hover { background: rgba(218,54,51,70); border-color: #f85149; }
 QCheckBox {
     spacing: 8px;
     color: #8b949e;
+    min-height: 28px;
 }
 QCheckBox::indicator {
     width: 15px; height: 15px;
@@ -199,13 +216,32 @@ QLabel#bindHint {
     border-radius: 5px;
     padding: 3px 7px;
 }
-QLabel#langLabel, QLabel#monitorLabel, QLabel#fileLabel,
-QLabel#volumeLabel, QLabel#fillLabel, QLabel#rotLabel,
-QLabel#autostartLabel, QLabel#folderLabel, QLabel#intervalLabel {
-    color: #8b949e;
-    min-width: 80px;
-}
 )";  // end APP_STYLE
+
+// helper: make a uniform label (fixed width, right-aligned text, mid-height)
+static QLabel *makeLabel(const QString &text, const QString &objName = {})
+{
+    QLabel *l = new QLabel(text);
+    l->setFixedWidth(LABEL_W);
+    l->setFixedHeight(ROW_H);
+    l->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    l->setStyleSheet("color:#8b949e;");
+    if (!objName.isEmpty()) l->setObjectName(objName);
+    return l;
+}
+
+// helper: row widget [label | widget | optBtn]
+static QWidget *makeRow(QLabel *lbl, QWidget *input, QPushButton *btn = nullptr)
+{
+    QWidget *row = new QWidget;
+    QHBoxLayout *hl = new QHBoxLayout(row);
+    hl->setContentsMargins(0,0,0,0);
+    hl->setSpacing(8);
+    hl->addWidget(lbl);
+    hl->addWidget(input, 1);
+    if (btn) hl->addWidget(btn);
+    return row;
+}
 
 static QString orientStr(int transform, const Strings &s)
 {
@@ -218,7 +254,6 @@ static QString orientStr(int transform, const Strings &s)
     }
 }
 
-// autostart helpers
 static QString autostartFilePath()
 {
     return QStandardPaths::writableLocation(QStandardPaths::ConfigLocation)
@@ -232,17 +267,14 @@ static QString autostartContent()
         "X-GNOME-Autostart-enabled=true\nComment=HyprWall wallpaper service\n");
 }
 
-// smart default browse directory
 QString MainWindow::smartBrowseDir() const
 {
     const QString home = QDir::homePath();
-    const QStringList candidates = {
-        home + "/Pictures/wallpapers",
-        home + "/Pictures/wallpaper",
-        home + "/Pictures",
-        home
-    };
-    for (const QString &d : candidates)
+    for (const QString &d : {
+            home + "/Pictures/wallpapers",
+            home + "/Pictures/wallpaper",
+            home + "/Pictures",
+            home })
         if (QDir(d).exists()) return d;
     return home;
 }
@@ -254,7 +286,7 @@ class MonitorBar : public QWidget {
     Q_OBJECT
 public:
     explicit MonitorBar(QWidget *p = nullptr) : QWidget(p) {
-        setMinimumHeight(170);
+        setMinimumHeight(160);
         setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     }
     void setMonitors(const QList<MonitorInfo> &m)  { m_monitors=m; m_selected=m.isEmpty()?"":m.first().name; update(); }
@@ -390,7 +422,6 @@ void MainWindow::onModeChanged(int)
     if (idx == 0) stopSlideshowTimer();
 }
 
-// slideshow helpers
 void MainWindow::startSlideshowTimer()
 {
     if (!m_slideshowTimer) {
@@ -416,14 +447,12 @@ void MainWindow::applyNextSlide()
     QString path = state.files[state.index];
     WallpaperConfig cfg = ConfigManager::instance().getConfig(m_currentMonitor);
     cfg.filePath = path;
+    cfg.audioEnabled = false; // slideshow always silent
     WallpaperApplier::apply(cfg);
     m_monitorBar->setWallpaperPath(m_currentMonitor, path);
 }
 
-void MainWindow::onSlideshowTick()
-{
-    applyNextSlide();
-}
+void MainWindow::onSlideshowTick() { applyNextSlide(); }
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
@@ -466,201 +495,235 @@ void MainWindow::mouseMoveEvent(QMouseEvent *e)
 void MainWindow::buildUi()
 {
     setWindowTitle(m_s.windowTitle);
-    setMinimumSize(540,700);
-    resize(560,750);
+    // Fixed width — no resize, prevents layout breakage
+    setFixedWidth(560);
+    setMinimumHeight(680);
+    resize(560, 720);
 
-    QWidget *central=new QWidget(this);
+    QWidget *central = new QWidget(this);
     central->setObjectName("central");
     setCentralWidget(central);
-    QVBoxLayout *root=new QVBoxLayout(central);
+    QVBoxLayout *root = new QVBoxLayout(central);
     root->setSpacing(10);
-    root->setContentsMargins(16,14,16,14);
+    root->setContentsMargins(16, 12, 16, 12);
 
-    // Title bar
+    // ── Title bar ────────────────────────────────────────────
     {
-        QHBoxLayout *tb=new QHBoxLayout;
-        QLabel *title=new QLabel("HyprWall");
+        QHBoxLayout *tb = new QHBoxLayout;
+        tb->setSpacing(6);
+        QLabel *title = new QLabel("HyprWall");
         title->setStyleSheet("font-size:17px;font-weight:700;color:#c9d1d9;letter-spacing:1px;");
-        m_langLabel=new QLabel(m_s.langLabel); m_langLabel->setObjectName("langLabel");
-        m_langCombo=new QComboBox;
-        m_langCombo->addItems({"English","\u0420\u0443\u0441\u0441\u043a\u0438\u0439"});
-        m_langCombo->setFixedWidth(110);
-        connect(m_langCombo,QOverload<int>::of(&QComboBox::currentIndexChanged),this,&MainWindow::onLanguageChanged);
-        m_autostartLabel=new QLabel(m_s.autostartLabel); m_autostartLabel->setObjectName("autostartLabel");
-        m_autostartBtn=new QPushButton; m_autostartBtn->setFixedWidth(90);
+
+        m_autostartLabel = new QLabel(m_s.autostartLabel);
+        m_autostartLabel->setObjectName("autostartLabel");
+        m_autostartLabel->setStyleSheet("color:#8b949e;font-size:12px;");
+        m_autostartBtn = new QPushButton;
+        m_autostartBtn->setFixedWidth(90);
         updateAutostartButton();
-        connect(m_autostartBtn,&QPushButton::clicked,this,&MainWindow::onAutostartToggle);
-        QPushButton *closeBtn=new QPushButton("\u2715"); closeBtn->setFixedSize(26,26);
+        connect(m_autostartBtn, &QPushButton::clicked, this, &MainWindow::onAutostartToggle);
+
+        m_langLabel = new QLabel(m_s.langLabel);
+        m_langLabel->setObjectName("langLabel");
+        m_langLabel->setStyleSheet("color:#8b949e;font-size:12px;");
+        m_langCombo = new QComboBox;
+        m_langCombo->addItems({"English", "\u0420\u0443\u0441\u0441\u043a\u0438\u0439"});
+        m_langCombo->setFixedWidth(110);
+        connect(m_langCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onLanguageChanged);
+
+        QPushButton *closeBtn = new QPushButton("\u2715");
+        closeBtn->setFixedSize(26, 26);
         closeBtn->setStyleSheet(
             "QPushButton{background:transparent;border:1px solid rgba(255,70,70,50);"
-            "border-radius:5px;color:#6e7681;font-size:11px;padding:0;}"
+            "border-radius:5px;color:#6e7681;font-size:11px;padding:0;min-height:26px;max-height:26px;}"
             "QPushButton:hover{background:rgba(218,54,51,180);border-color:transparent;color:#fff;}");
-        connect(closeBtn,&QPushButton::clicked,this,&QMainWindow::close);
-        tb->addWidget(title); tb->addStretch();
-        tb->addWidget(m_autostartLabel); tb->addWidget(m_autostartBtn);
-        tb->addSpacing(12);
-        tb->addWidget(m_langLabel); tb->addWidget(m_langCombo);
-        tb->addSpacing(8); tb->addWidget(closeBtn);
+        connect(closeBtn, &QPushButton::clicked, this, &QMainWindow::close);
+
+        tb->addWidget(title);
+        tb->addStretch();
+        tb->addWidget(m_autostartLabel);
+        tb->addWidget(m_autostartBtn);
+        tb->addSpacing(10);
+        tb->addWidget(m_langLabel);
+        tb->addWidget(m_langCombo);
+        tb->addSpacing(6);
+        tb->addWidget(closeBtn);
         root->addLayout(tb);
     }
 
-    // Monitor bar
-    m_monitorBar=new MonitorBar(this);
+    // ── Monitor bar ──────────────────────────────────────────
+    m_monitorBar = new MonitorBar(this);
+    m_monitorBar->setFixedHeight(160);
     m_monitorBar->setNoMonitorsText(m_s.noMonitors);
-    connect(m_monitorBar,&MonitorBar::monitorClicked,this,[this](const QString &name){
-        int idx=m_monitorCombo->findText(name);
-        if(idx>=0) m_monitorCombo->setCurrentIndex(idx);
+    connect(m_monitorBar, &MonitorBar::monitorClicked, this, [this](const QString &name){
+        int idx = m_monitorCombo->findText(name);
+        if (idx >= 0) m_monitorCombo->setCurrentIndex(idx);
     });
     root->addWidget(m_monitorBar);
 
-    // Monitor selector
+    // ── Monitor selector ────────────────────────────────────
     {
-        QHBoxLayout *row=new QHBoxLayout;
-        m_monitorLabel=new QLabel(m_s.monitorLabel); m_monitorLabel->setObjectName("monitorLabel");
-        m_monitorCombo=new QComboBox;
-        row->addWidget(m_monitorLabel); row->addWidget(m_monitorCombo,1);
-        root->addLayout(row);
+        m_monitorLabel = makeLabel(m_s.monitorLabel, "monitorLabel");
+        m_monitorCombo = new QComboBox;
+        root->addWidget(makeRow(m_monitorLabel, m_monitorCombo));
     }
 
-    // Settings group
-    m_settingsGroup=new QGroupBox(m_s.groupTitle);
-    QVBoxLayout *sg=new QVBoxLayout(m_settingsGroup);
-    sg->setSpacing(8); sg->setContentsMargins(10,14,10,10);
+    // ── Settings group ──────────────────────────────────────
+    m_settingsGroup = new QGroupBox(m_s.groupTitle);
+    QVBoxLayout *sg = new QVBoxLayout(m_settingsGroup);
+    sg->setSpacing(8);
+    sg->setContentsMargins(10, 14, 10, 10);
 
-    m_orientationLabel=new QLabel("-");
+    m_orientationLabel = new QLabel("-");
     m_orientationLabel->setObjectName("orientLabel");
+    m_orientationLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     sg->addWidget(m_orientationLabel);
 
-    // Mode selector bar
+    // Mode selector
     {
-        QWidget *modeBar=new QWidget; modeBar->setObjectName("modeBar");
-        QHBoxLayout *ml=new QHBoxLayout(modeBar);
+        QWidget *modeBar = new QWidget; modeBar->setObjectName("modeBar");
+        QHBoxLayout *ml = new QHBoxLayout(modeBar);
         ml->setContentsMargins(4,4,4,4); ml->setSpacing(4);
-        m_radioStatic   =new QRadioButton(m_s.modeStatic);    m_radioStatic->setChecked(true);
-        m_radioSlideshow=new QRadioButton(m_s.modeSlideshow);
-        m_modeGroup=new QButtonGroup(this);
-        m_modeGroup->addButton(m_radioStatic,   0);
-        m_modeGroup->addButton(m_radioSlideshow,1);
-        connect(m_modeGroup,QOverload<int>::of(&QButtonGroup::idClicked),this,&MainWindow::onModeChanged);
+        m_radioStatic    = new QRadioButton(m_s.modeStatic);    m_radioStatic->setChecked(true);
+        m_radioSlideshow = new QRadioButton(m_s.modeSlideshow);
+        m_modeGroup = new QButtonGroup(this);
+        m_modeGroup->addButton(m_radioStatic,    0);
+        m_modeGroup->addButton(m_radioSlideshow, 1);
+        connect(m_modeGroup, QOverload<int>::of(&QButtonGroup::idClicked), this, &MainWindow::onModeChanged);
         ml->addWidget(m_radioStatic); ml->addWidget(m_radioSlideshow); ml->addStretch();
         sg->addWidget(modeBar);
     }
 
-    // Stacked pages
-    m_modeStack=new QStackedWidget;
+    // ── Stacked pages ────────────────────────────────────────
+    m_modeStack = new QStackedWidget;
+    m_modeStack->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
     // Page 0: Static
     {
-        QWidget *page=new QWidget;
-        QVBoxLayout *vl=new QVBoxLayout(page); vl->setContentsMargins(0,0,0,0); vl->setSpacing(6);
-        // file row
-        QHBoxLayout *fileRow=new QHBoxLayout;
-        m_fileLabel=new QLabel(m_s.fileLabel); m_fileLabel->setObjectName("fileLabel");
-        m_fileEdit=new QLineEdit;
-        m_browseBtn=new QPushButton(m_s.browseBtn); m_browseBtn->setFixedWidth(80);
-        connect(m_browseBtn,&QPushButton::clicked,this,&MainWindow::onBrowseFile);
-        fileRow->addWidget(m_fileLabel); fileRow->addWidget(m_fileEdit,1); fileRow->addWidget(m_browseBtn);
-        vl->addLayout(fileRow);
-        // audio
-        m_audioCheck=new QCheckBox(m_s.audioCheck);
-        connect(m_audioCheck,&QCheckBox::toggled,this,&MainWindow::onAudioToggled);
+        QWidget *page = new QWidget;
+        QVBoxLayout *vl = new QVBoxLayout(page);
+        vl->setContentsMargins(0,0,0,0); vl->setSpacing(6);
+
+        m_fileLabel = makeLabel(m_s.fileLabel, "fileLabel");
+        m_fileEdit  = new QLineEdit;
+        m_browseBtn = new QPushButton(m_s.browseBtn);
+        m_browseBtn->setFixedWidth(BTN_W);
+        connect(m_browseBtn, &QPushButton::clicked, this, &MainWindow::onBrowseFile);
+        vl->addWidget(makeRow(m_fileLabel, m_fileEdit, m_browseBtn));
+
+        m_audioCheck = new QCheckBox(m_s.audioCheck);
+        connect(m_audioCheck, &QCheckBox::toggled, this, &MainWindow::onAudioToggled);
         m_audioCheck->hide();
-        vl->addWidget(m_audioCheck);
-        // volume
-        QWidget *vw=new QWidget;
-        QHBoxLayout *volRow=new QHBoxLayout(vw); volRow->setContentsMargins(0,0,0,0);
-        m_volumeLabelW=new QLabel(m_s.volumeLabel); m_volumeLabelW->setObjectName("volumeLabel");
-        m_volumeSlider=new QSlider(Qt::Horizontal);
+        // indent audio checkbox to align with inputs
+        QHBoxLayout *audioRow = new QHBoxLayout;
+        audioRow->setContentsMargins(LABEL_W+8,0,0,0);
+        audioRow->addWidget(m_audioCheck);
+        audioRow->addStretch();
+        QWidget *audioWidget = new QWidget;
+        audioWidget->setLayout(audioRow);
+        audioWidget->hide();
+        m_audioCheck->setProperty("rowWidget", QVariant::fromValue(audioWidget));
+        vl->addWidget(audioWidget);
+
+        // Volume row
+        QWidget *vw = new QWidget;
+        QHBoxLayout *volRow = new QHBoxLayout(vw);
+        volRow->setContentsMargins(0,0,0,0); volRow->setSpacing(8);
+        m_volumeLabelW = makeLabel(m_s.volumeLabel, "volumeLabel");
+        m_volumeSlider = new QSlider(Qt::Horizontal);
         m_volumeSlider->setRange(0,100); m_volumeSlider->setValue(50);
-        m_volumeLabel=new QLabel("50%"); m_volumeLabel->setMinimumWidth(36);
+        m_volumeLabel  = new QLabel("50%");
+        m_volumeLabel->setFixedWidth(36);
+        m_volumeLabel->setAlignment(Qt::AlignRight|Qt::AlignVCenter);
         m_volumeLabel->setStyleSheet("color:#58a6ff;font-weight:600;");
-        connect(m_volumeSlider,&QSlider::valueChanged,this,&MainWindow::onVolumeChanged);
-        volRow->addWidget(m_volumeLabelW); volRow->addWidget(m_volumeSlider,1); volRow->addWidget(m_volumeLabel);
+        connect(m_volumeSlider, &QSlider::valueChanged, this, &MainWindow::onVolumeChanged);
+        volRow->addWidget(m_volumeLabelW);
+        volRow->addWidget(m_volumeSlider, 1);
+        volRow->addWidget(m_volumeLabel);
         vw->hide();
-        m_volumeSlider->setProperty("volWidget",QVariant::fromValue(vw));
+        m_volumeSlider->setProperty("volWidget", QVariant::fromValue(vw));
         vl->addWidget(vw);
-        // bind hint
-        m_bindRow=new QWidget;
-        QVBoxLayout *bl=new QVBoxLayout(m_bindRow); bl->setContentsMargins(0,4,0,0); bl->setSpacing(3);
-        m_bindPrefixLabel=new QLabel(m_s.bindPrefix); m_bindPrefixLabel->setObjectName("bindPrefix");
-        m_bindHint=new QLabel; m_bindHint->setObjectName("bindHint");
+
+        // Bind hint
+        m_bindRow = new QWidget;
+        QVBoxLayout *bl = new QVBoxLayout(m_bindRow);
+        bl->setContentsMargins(LABEL_W+8,4,0,0); bl->setSpacing(3);
+        m_bindPrefixLabel = new QLabel(m_s.bindPrefix);
+        m_bindPrefixLabel->setObjectName("bindPrefix");
+        m_bindHint = new QLabel;
+        m_bindHint->setObjectName("bindHint");
         m_bindHint->setTextInteractionFlags(Qt::TextSelectableByMouse);
-        bl->addWidget(m_bindPrefixLabel); bl->addWidget(m_bindHint);
+        bl->addWidget(m_bindPrefixLabel);
+        bl->addWidget(m_bindHint);
         m_bindRow->hide();
         vl->addWidget(m_bindRow);
+
         m_modeStack->addWidget(page);
     }
 
     // Page 1: Slideshow
     {
-        QWidget *page=new QWidget;
-        QVBoxLayout *vl=new QVBoxLayout(page); vl->setContentsMargins(0,0,0,0); vl->setSpacing(6);
-        // folder row
-        QHBoxLayout *folderRow=new QHBoxLayout;
-        m_folderLabel=new QLabel(m_s.folderLabel); m_folderLabel->setObjectName("folderLabel");
-        m_folderEdit=new QLineEdit;
-        m_browseFolderBtn=new QPushButton(m_s.browseFolderBtn); m_browseFolderBtn->setFixedWidth(80);
-        connect(m_browseFolderBtn,&QPushButton::clicked,this,&MainWindow::onBrowseFolder);
-        folderRow->addWidget(m_folderLabel); folderRow->addWidget(m_folderEdit,1); folderRow->addWidget(m_browseFolderBtn);
-        vl->addLayout(folderRow);
-        // interval row
-        QHBoxLayout *intRow=new QHBoxLayout;
-        m_intervalLabel=new QLabel(m_s.intervalLabel); m_intervalLabel->setObjectName("intervalLabel");
-        m_intervalCombo=new QComboBox;
+        QWidget *page = new QWidget;
+        QVBoxLayout *vl = new QVBoxLayout(page);
+        vl->setContentsMargins(0,0,0,0); vl->setSpacing(6);
+
+        m_folderLabel     = makeLabel(m_s.folderLabel, "folderLabel");
+        m_folderEdit      = new QLineEdit;
+        m_browseFolderBtn = new QPushButton(m_s.browseFolderBtn);
+        m_browseFolderBtn->setFixedWidth(BTN_W);
+        connect(m_browseFolderBtn, &QPushButton::clicked, this, &MainWindow::onBrowseFolder);
+        vl->addWidget(makeRow(m_folderLabel, m_folderEdit, m_browseFolderBtn));
+
+        m_intervalLabel = makeLabel(m_s.intervalLabel, "intervalLabel");
+        m_intervalCombo = new QComboBox;
         m_intervalCombo->addItems(m_s.intervalLabels);
-        intRow->addWidget(m_intervalLabel); intRow->addWidget(m_intervalCombo,1);
-        vl->addLayout(intRow);
+        vl->addWidget(makeRow(m_intervalLabel, m_intervalCombo));
+
         m_modeStack->addWidget(page);
     }
 
     sg->addWidget(m_modeStack);
 
-    // Fill
+    // ── Fill ─────────────────────────────────────────────────
     {
-        QHBoxLayout *row=new QHBoxLayout;
-        m_fillLabel=new QLabel(m_s.fillLabel); m_fillLabel->setObjectName("fillLabel");
-        m_fillCombo=new QComboBox;
+        m_fillLabel = makeLabel(m_s.fillLabel, "fillLabel");
+        m_fillCombo = new QComboBox;
         m_fillCombo->addItems(m_s.imgFillModes);
-        row->addWidget(m_fillLabel); row->addWidget(m_fillCombo,1);
-        sg->addLayout(row);
+        sg->addWidget(makeRow(m_fillLabel, m_fillCombo));
     }
 
-    // Rotation
+    // ── Rotation ─────────────────────────────────────────────
     {
-        QHBoxLayout *row=new QHBoxLayout;
-        m_rotLabel=new QLabel(m_s.rotLabel); m_rotLabel->setObjectName("rotLabel");
-        m_rotCombo=new QComboBox;
+        m_rotLabel = makeLabel(m_s.rotLabel, "rotLabel");
+        m_rotCombo = new QComboBox;
         m_rotCombo->addItems(m_s.imgRotModes);
-        row->addWidget(m_rotLabel); row->addWidget(m_rotCombo,1);
-        sg->addLayout(row);
+        sg->addWidget(makeRow(m_rotLabel, m_rotCombo));
     }
 
-    // Apply
-    m_applyBtn=new QPushButton(m_s.applyBtn);
+    // ── Apply ────────────────────────────────────────────────
+    m_applyBtn = new QPushButton(m_s.applyBtn);
     m_applyBtn->setObjectName("applyBtn");
-    m_applyBtn->setFixedHeight(40);
-    connect(m_applyBtn,&QPushButton::clicked,this,&MainWindow::onApply);
+    connect(m_applyBtn, &QPushButton::clicked, this, &MainWindow::onApply);
     sg->addWidget(m_applyBtn);
 
     root->addWidget(m_settingsGroup);
     root->addStretch();
 
-    connect(m_monitorCombo,QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this,&MainWindow::onMonitorSelected);
+    connect(m_monitorCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &MainWindow::onMonitorSelected);
 }
 
 void MainWindow::switchToVideo(bool isVideo)
 {
-    if (m_isVideo==isVideo) return;
-    m_isVideo=isVideo;
-    int prevFill=m_fillCombo->currentIndex();
-    int prevRot=m_rotCombo->currentIndex();
+    if (m_isVideo == isVideo) return;
+    m_isVideo = isVideo;
+    int prevFill = m_fillCombo->currentIndex();
+    int prevRot  = m_rotCombo->currentIndex();
     m_fillCombo->blockSignals(true); m_rotCombo->blockSignals(true);
     m_fillCombo->clear(); m_rotCombo->clear();
     if (isVideo) { m_fillCombo->addItems(m_s.vidFillModes); m_rotCombo->addItems(m_s.vidRotModes); }
     else         { m_fillCombo->addItems(m_s.imgFillModes); m_rotCombo->addItems(m_s.imgRotModes); }
-    m_fillCombo->setCurrentIndex(std::min(prevFill,m_fillCombo->count()-1));
-    m_rotCombo->setCurrentIndex(std::min(prevRot, m_rotCombo->count()-1));
+    m_fillCombo->setCurrentIndex(std::min(prevFill, m_fillCombo->count()-1));
+    m_rotCombo->setCurrentIndex(std::min(prevRot,  m_rotCombo->count()-1));
     m_fillCombo->blockSignals(false); m_rotCombo->blockSignals(false);
 }
 
@@ -685,19 +748,19 @@ void MainWindow::retranslateUi()
     m_radioStatic->setText(m_s.modeStatic);
     m_radioSlideshow->setText(m_s.modeSlideshow);
     m_browseFolderBtn->setText(m_s.browseFolderBtn);
-    int prevInterval=m_intervalCombo->currentIndex();
+    int prevInterval = m_intervalCombo->currentIndex();
     m_intervalCombo->blockSignals(true); m_intervalCombo->clear();
     m_intervalCombo->addItems(m_s.intervalLabels);
-    m_intervalCombo->setCurrentIndex(qBound(0,prevInterval,3));
+    m_intervalCombo->setCurrentIndex(qBound(0, prevInterval, 3));
     m_intervalCombo->blockSignals(false);
     updateAutostartButton();
-    int fi=m_fillCombo->currentIndex(),ri=m_rotCombo->currentIndex();
+    int fi = m_fillCombo->currentIndex(), ri = m_rotCombo->currentIndex();
     m_fillCombo->blockSignals(true); m_rotCombo->blockSignals(true);
     m_fillCombo->clear(); m_rotCombo->clear();
     if (m_isVideo) { m_fillCombo->addItems(m_s.vidFillModes); m_rotCombo->addItems(m_s.vidRotModes); }
     else           { m_fillCombo->addItems(m_s.imgFillModes); m_rotCombo->addItems(m_s.imgRotModes); }
-    m_fillCombo->setCurrentIndex(std::min(fi,m_fillCombo->count()-1));
-    m_rotCombo->setCurrentIndex(std::min(ri,m_rotCombo->count()-1));
+    m_fillCombo->setCurrentIndex(std::min(fi, m_fillCombo->count()-1));
+    m_rotCombo->setCurrentIndex(std::min(ri, m_rotCombo->count()-1));
     m_fillCombo->blockSignals(false); m_rotCombo->blockSignals(false);
     if (!m_currentMonitor.isEmpty()) populateSettings(m_currentMonitor);
     m_monitorBar->update();
@@ -705,8 +768,8 @@ void MainWindow::retranslateUi()
 
 void MainWindow::onLanguageChanged(int idx)
 {
-    m_isRU=(idx==1);
-    m_s=m_isRU?stringsRU():stringsEN();
+    m_isRU = (idx == 1);
+    m_s = m_isRU ? stringsRU() : stringsEN();
     retranslateUi();
 }
 
@@ -717,14 +780,14 @@ QString MainWindow::bindString() const
 
 void MainWindow::loadMonitors()
 {
-    m_monitors=MonitorDetector::detect();
+    m_monitors = MonitorDetector::detect();
     m_monitorBar->setMonitors(m_monitors);
     m_monitorCombo->blockSignals(true); m_monitorCombo->clear();
-    auto &cm=ConfigManager::instance();
-    for (const MonitorInfo &m:m_monitors) {
+    auto &cm = ConfigManager::instance();
+    for (const MonitorInfo &m : m_monitors) {
         m_monitorCombo->addItem(m.name);
-        WallpaperConfig cfg=cm.getConfig(m.name);
-        if (!cfg.filePath.isEmpty()) m_monitorBar->setWallpaperPath(m.name,cfg.filePath);
+        WallpaperConfig cfg = cm.getConfig(m.name);
+        if (!cfg.filePath.isEmpty()) m_monitorBar->setWallpaperPath(m.name, cfg.filePath);
     }
     m_monitorCombo->blockSignals(false);
     if (!m_monitors.isEmpty()) { m_monitorCombo->setCurrentIndex(0); onMonitorSelected(0); }
@@ -732,38 +795,37 @@ void MainWindow::loadMonitors()
 
 void MainWindow::onMonitorSelected(int index)
 {
-    if (index<0||index>=m_monitors.size()) return;
+    if (index < 0 || index >= m_monitors.size()) return;
     saveCurrentSettings();
-    m_currentMonitor=m_monitors[index].name;
+    m_currentMonitor = m_monitors[index].name;
     m_monitorBar->setSelected(m_currentMonitor);
     populateSettings(m_currentMonitor);
 }
 
 void MainWindow::populateSettings(const QString &monitorName)
 {
-    auto it=std::find_if(m_monitors.cbegin(),m_monitors.cend(),
-        [&](const MonitorInfo &m){return m.name==monitorName;});
-    if (it!=m_monitors.cend())
+    auto it = std::find_if(m_monitors.cbegin(), m_monitors.cend(),
+        [&](const MonitorInfo &m){ return m.name == monitorName; });
+    if (it != m_monitors.cend())
         m_orientationLabel->setText(
             QString("%1  |  %2x%3  @  %4Hz  scale %5")
-            .arg(orientStr(it->transform,m_s))
+            .arg(orientStr(it->transform, m_s))
             .arg(it->width).arg(it->height).arg(it->refreshRate)
-            .arg(it->scale,0,'f',2));
+            .arg(it->scale, 0, 'f', 2));
 
-    WallpaperConfig cfg=ConfigManager::instance().getConfig(monitorName);
-    bool isSlide=(cfg.mode==WallpaperMode::Slideshow);
+    WallpaperConfig cfg = ConfigManager::instance().getConfig(monitorName);
+    bool isSlide = (cfg.mode == WallpaperMode::Slideshow);
     m_radioStatic->setChecked(!isSlide);
     m_radioSlideshow->setChecked(isSlide);
-    updateModeStack(isSlide?1:0);
+    updateModeStack(isSlide ? 1 : 0);
 
     m_folderEdit->setText(cfg.folderPath);
-    // find interval index
-    int intIdx=0;
-    for (int i=0;i<4;i++) { if (INTERVAL_SECS[i]==cfg.slideshowSecs) { intIdx=i; break; } }
+    int intIdx = 0;
+    for (int i = 0; i < 4; i++) { if (INTERVAL_SECS[i] == cfg.slideshowSecs) { intIdx = i; break; } }
     m_intervalCombo->setCurrentIndex(intIdx);
 
-    bool isVid=WallpaperApplier::isVideoFile(cfg.filePath);
-    m_isVideo=!isVid; switchToVideo(isVid);
+    bool isVid = WallpaperApplier::isVideoFile(cfg.filePath);
+    m_isVideo = !isVid; switchToVideo(isVid);
     m_fillCombo->blockSignals(true); m_rotCombo->blockSignals(true);
     m_fileEdit->setText(cfg.filePath);
     m_fillCombo->setCurrentIndex(static_cast<int>(cfg.fillMode));
@@ -772,21 +834,25 @@ void MainWindow::populateSettings(const QString &monitorName)
     m_volumeSlider->setValue(cfg.audioVolume);
     m_volumeLabel->setText(QString("%1%").arg(cfg.audioVolume));
     m_fillCombo->blockSignals(false); m_rotCombo->blockSignals(false);
-    m_audioCheck->setVisible(isVid&&!isSlide);
-    QWidget *vw=m_volumeSlider->property("volWidget").value<QWidget*>();
-    if (vw) vw->setVisible(isVid&&!isSlide&&cfg.audioEnabled);
-    if (isVid&&!isSlide) { m_bindHint->setText(bindString()); m_bindRow->show(); }
+
+    bool showAudio = isVid && !isSlide;
+    QWidget *audioWidget = m_audioCheck->property("rowWidget").value<QWidget*>();
+    if (audioWidget) audioWidget->setVisible(showAudio);
+    m_audioCheck->setVisible(showAudio);
+    QWidget *vw = m_volumeSlider->property("volWidget").value<QWidget*>();
+    if (vw) vw->setVisible(showAudio && cfg.audioEnabled);
+    if (showAudio) { m_bindHint->setText(bindString()); m_bindRow->show(); }
     else m_bindRow->hide();
 
-    // rebuild slide state if slideshow
-    if (isSlide&&!cfg.folderPath.isEmpty()) {
+    if (isSlide && !cfg.folderPath.isEmpty()) {
         QDir dir(cfg.folderPath);
-        QStringList exts={"*.jpg","*.jpeg","*.png","*.bmp","*.gif","*.webp"};
-        QStringList files=dir.entryList(exts,QDir::Files,QDir::Name);
-        SlideState &st=m_slideStates[monitorName];
+        // Slideshow: images only (no video)
+        QStringList exts = {"*.jpg","*.jpeg","*.png","*.bmp","*.gif","*.webp"};
+        QStringList files = dir.entryList(exts, QDir::Files, QDir::Name);
+        SlideState &st = m_slideStates[monitorName];
         st.files.clear();
-        for (auto &f:files) st.files<<dir.absoluteFilePath(f);
-        st.index=0;
+        for (auto &f : files) st.files << dir.absoluteFilePath(f);
+        st.index = 0;
         startSlideshowTimer();
     } else {
         stopSlideshowTimer();
@@ -797,70 +863,73 @@ void MainWindow::saveCurrentSettings()
 {
     if (m_currentMonitor.isEmpty()) return;
     WallpaperConfig cfg;
-    cfg.monitorName  =m_currentMonitor;
-    cfg.filePath     =m_fileEdit->text();
-    cfg.folderPath   =m_folderEdit->text();
-    cfg.mode         =m_radioSlideshow->isChecked()?WallpaperMode::Slideshow:WallpaperMode::Static;
-    cfg.slideshowSecs=INTERVAL_SECS[qBound(0,m_intervalCombo->currentIndex(),3)];
-    cfg.fillMode     =static_cast<FillMode>(m_fillCombo->currentIndex());
-    cfg.rotation     =static_cast<WallpaperRotation>(m_rotCombo->currentIndex());
-    cfg.audioEnabled =m_audioCheck->isChecked();
-    cfg.audioVolume  =m_volumeSlider->value();
-    ConfigManager::instance().setConfig(m_currentMonitor,cfg);
+    cfg.monitorName   = m_currentMonitor;
+    cfg.filePath      = m_fileEdit->text();
+    cfg.folderPath    = m_folderEdit->text();
+    cfg.mode          = m_radioSlideshow->isChecked() ? WallpaperMode::Slideshow : WallpaperMode::Static;
+    cfg.slideshowSecs = INTERVAL_SECS[qBound(0, m_intervalCombo->currentIndex(), 3)];
+    cfg.fillMode      = static_cast<FillMode>(m_fillCombo->currentIndex());
+    cfg.rotation      = static_cast<WallpaperRotation>(m_rotCombo->currentIndex());
+    cfg.audioEnabled  = m_audioCheck->isChecked();
+    cfg.audioVolume   = m_volumeSlider->value();
+    ConfigManager::instance().setConfig(m_currentMonitor, cfg);
 }
 
 void MainWindow::onBrowseFile()
 {
-    QString title =m_isRU?QString("\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0444\u0430\u0439\u043b"):QString("Select file");
-    QString filter=m_isRU?QString("\u0418\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u044f \u0438 \u0432\u0438\u0434\u0435\u043e"):QString("Images and video");
-    filter+=" (*.jpg *.jpeg *.png *.bmp *.gif *.mp4 *.mkv *.avi *.webm *.mov);;";
-    filter+=m_isRU?QString("\u0412\u0441\u0435 \u0444\u0430\u0439\u043b\u044b (*)"):QString("All files (*)");
-    QString path=QFileDialog::getOpenFileName(this,title,smartBrowseDir(),filter);
+    QString title  = m_isRU ? QString("\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0444\u0430\u0439\u043b") : QString("Select file");
+    QString filter = m_isRU ? QString("\u0418\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u044f \u0438 \u0432\u0438\u0434\u0435\u043e") : QString("Images and video");
+    filter += " (*.jpg *.jpeg *.png *.bmp *.gif *.mp4 *.mkv *.avi *.webm *.mov);;";
+    filter += m_isRU ? QString("\u0412\u0441\u0435 \u0444\u0430\u0439\u043b\u044b (*)") : QString("All files (*)");
+    QString path = QFileDialog::getOpenFileName(this, title, smartBrowseDir(), filter);
     if (path.isEmpty()) return;
     m_fileEdit->setText(path);
-    bool isVid=WallpaperApplier::isVideoFile(path);
+    bool isVid = WallpaperApplier::isVideoFile(path);
     switchToVideo(isVid);
+    QWidget *audioWidget = m_audioCheck->property("rowWidget").value<QWidget*>();
+    if (audioWidget) audioWidget->setVisible(isVid);
     m_audioCheck->setVisible(isVid);
-    QWidget *vw=m_volumeSlider->property("volWidget").value<QWidget*>();
-    if (vw) vw->setVisible(isVid&&m_audioCheck->isChecked());
+    QWidget *vw = m_volumeSlider->property("volWidget").value<QWidget*>();
+    if (vw) vw->setVisible(isVid && m_audioCheck->isChecked());
     if (isVid) { m_bindHint->setText(bindString()); m_bindRow->show(); } else m_bindRow->hide();
-    m_monitorBar->setWallpaperPath(m_currentMonitor,path);
+    m_monitorBar->setWallpaperPath(m_currentMonitor, path);
 }
 
 void MainWindow::onBrowseFolder()
 {
-    QString title=m_isRU?QString("\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u043f\u0430\u043f\u043a\u0443"):QString("Select folder");
-    QString path=QFileDialog::getExistingDirectory(this,title,smartBrowseDir());
+    QString title = m_isRU ? QString("\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u043f\u0430\u043f\u043a\u0443") : QString("Select folder");
+    QString path = QFileDialog::getExistingDirectory(this, title, smartBrowseDir());
     if (path.isEmpty()) return;
     m_folderEdit->setText(path);
     QDir dir(path);
-    QStringList exts={"*.jpg","*.jpeg","*.png","*.bmp","*.gif","*.webp"};
-    QStringList files=dir.entryList(exts,QDir::Files,QDir::Name);
-    SlideState &st=m_slideStates[m_currentMonitor];
+    // images only for slideshow
+    QStringList exts = {"*.jpg","*.jpeg","*.png","*.bmp","*.gif","*.webp"};
+    QStringList files = dir.entryList(exts, QDir::Files, QDir::Name);
+    SlideState &st = m_slideStates[m_currentMonitor];
     st.files.clear();
-    for (auto &f:files) st.files<<dir.absoluteFilePath(f);
-    st.index=0;
+    for (auto &f : files) st.files << dir.absoluteFilePath(f);
+    st.index = 0;
     if (!st.files.isEmpty())
-        m_monitorBar->setWallpaperPath(m_currentMonitor,st.files.first());
+        m_monitorBar->setWallpaperPath(m_currentMonitor, st.files.first());
 }
 
 void MainWindow::onApply()
 {
     saveCurrentSettings();
     ConfigManager::instance().save();
-    WallpaperConfig cfg=ConfigManager::instance().getConfig(m_currentMonitor);
-    if (cfg.mode==WallpaperMode::Slideshow) {
-        // apply first file now, then start timer
-        auto &st=m_slideStates[m_currentMonitor];
+    WallpaperConfig cfg = ConfigManager::instance().getConfig(m_currentMonitor);
+    if (cfg.mode == WallpaperMode::Slideshow) {
+        auto &st = m_slideStates[m_currentMonitor];
         if (!st.files.isEmpty()) {
-            cfg.filePath=st.files[st.index];
+            cfg.filePath      = st.files[st.index];
+            cfg.audioEnabled  = false; // slideshow = silent
             WallpaperApplier::apply(cfg);
         }
         startSlideshowTimer();
     } else {
         stopSlideshowTimer();
         if (!WallpaperApplier::apply(cfg))
-            QMessageBox::warning(this,m_s.errTitle,m_s.errBody);
+            QMessageBox::warning(this, m_s.errTitle, m_s.errBody);
     }
 }
 
@@ -869,7 +938,7 @@ void MainWindow::onRotationChanged(int) {}
 
 void MainWindow::onAudioToggled(bool checked)
 {
-    QWidget *vw=m_volumeSlider->property("volWidget").value<QWidget*>();
+    QWidget *vw = m_volumeSlider->property("volWidget").value<QWidget*>();
     if (vw) vw->setVisible(checked);
 }
 
