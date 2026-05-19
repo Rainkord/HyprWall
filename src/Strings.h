@@ -21,12 +21,6 @@ struct Strings {
     QString autostartLabel;
     QString autostartEnable;
     QString autostartDisable;
-    // Slideshow
-    QString folderLabel;
-    QString browseFolderBtn;
-    QString intervalLabel;
-    QString modeStatic;
-    QString modeSlideshow;
     // Orientation strings
     QString orientLandscape;
     QString orientPortrait90;
@@ -38,8 +32,6 @@ struct Strings {
     // Rotation modes
     QStringList imgRotModes;
     QStringList vidRotModes;
-    // Interval labels
-    QStringList intervalLabels;
 };
 
 inline Strings stringsEN()
@@ -63,20 +55,14 @@ inline Strings stringsEN()
     s.autostartLabel   = "Autostart:";
     s.autostartEnable  = "Enable";
     s.autostartDisable = "Disable";
-    s.folderLabel      = "Folder:";
-    s.browseFolderBtn  = "Browse";
-    s.intervalLabel    = "Interval:";
-    s.modeStatic       = "Static";
-    s.modeSlideshow    = "Slideshow";
-    s.orientLandscape  = "Landscape";
-    s.orientPortrait90 = "Portrait 90\u00b0";
+    s.orientLandscape    = "Landscape";
+    s.orientPortrait90   = "Portrait 90\u00b0";
     s.orientLandscape180 = "Landscape 180\u00b0";
     s.orientPortrait270  = "Portrait 270\u00b0";
-    s.imgFillModes     = { "Cover", "Contain", "Tile", "Fill" };
-    s.vidFillModes     = { "Cover (pan)", "Contain", "Stretch" };
-    s.imgRotModes      = { "Normal", "90\u00b0 CW", "180\u00b0", "270\u00b0 CW", "Flip H", "Flip V" };
-    s.vidRotModes      = { "Normal", "90\u00b0 CW", "180\u00b0", "270\u00b0 CW", "Flip H", "Flip V" };
-    s.intervalLabels   = { "10 min", "20 min", "30 min", "1 hour" };
+    s.imgFillModes = { "Cover", "Contain" };
+    s.vidFillModes = { "Cover (pan)", "Contain" };
+    s.imgRotModes  = { "0\u00b0", "90\u00b0", "180\u00b0", "270\u00b0" };
+    s.vidRotModes  = { "0\u00b0", "90\u00b0", "180\u00b0", "270\u00b0" };
     return s;
 }
 
@@ -101,19 +87,13 @@ inline Strings stringsRU()
     s.autostartLabel   = "\u0410\u0432\u0442\u043e\u0437\u0430\u043f\u0443\u0441\u043a:";
     s.autostartEnable  = "\u0412\u043a\u043b\u044e\u0447\u0438\u0442\u044c";
     s.autostartDisable = "\u0412\u044b\u043a\u043b\u044e\u0447\u0438\u0442\u044c";
-    s.folderLabel      = "\u041f\u0430\u043f\u043a\u0430:";
-    s.browseFolderBtn  = "\u041e\u0431\u0437\u043e\u0440";
-    s.intervalLabel    = "\u0418\u043d\u0442\u0435\u0440\u0432\u0430\u043b:";
-    s.modeStatic       = "\u041e\u0434\u0438\u043d \u0444\u0430\u0439\u043b";
-    s.modeSlideshow    = "\u0421\u043b\u0430\u0439\u0434\u0448\u043e\u0443";
-    s.orientLandscape  = "\u0413\u043e\u0440\u0438\u0437\u043e\u043d\u0442\u0430\u043b\u044c";
-    s.orientPortrait90 = "\u041f\u043e\u0440\u0442\u0440\u0435\u0442 90\u00b0";
+    s.orientLandscape    = "\u0413\u043e\u0440\u0438\u0437\u043e\u043d\u0442\u0430\u043b\u044c";
+    s.orientPortrait90   = "\u041f\u043e\u0440\u0442\u0440\u0435\u0442 90\u00b0";
     s.orientLandscape180 = "\u0413\u043e\u0440\u0438\u0437\u043e\u043d\u0442\u0430\u043b\u044c 180\u00b0";
     s.orientPortrait270  = "\u041f\u043e\u0440\u0442\u0440\u0435\u0442 270\u00b0";
-    s.imgFillModes     = { "\u0417\u0430\u043f\u043e\u043b\u043d\u0438\u0442\u044c", "\u0412\u043f\u0438\u0441\u0430\u0442\u044c", "\u041f\u043b\u0438\u0442\u043a\u0430", "\u0420\u0430\u0441\u0442\u044f\u043d\u0443\u0442\u044c" };
-    s.vidFillModes     = { "\u0417\u0430\u043f\u043e\u043b\u043d\u0438\u0442\u044c", "\u0412\u043f\u0438\u0441\u0430\u0442\u044c", "\u0420\u0430\u0441\u0442\u044f\u043d\u0443\u0442\u044c" };
-    s.imgRotModes      = { "\u041d\u043e\u0440\u043c\u0430\u043b\u044c\u043d\u043e", "90\u00b0 \u041f\u0427", "180\u00b0", "270\u00b0 \u041f\u0427", "\u041e\u0442\u0440. \u0413", "\u041e\u0442\u0440. \u0412" };
-    s.vidRotModes      = s.imgRotModes;
-    s.intervalLabels   = { "10 \u043c\u0438\u043d", "20 \u043c\u0438\u043d", "30 \u043c\u0438\u043d", "1 \u0447\u0430\u0441" };
+    s.imgFillModes = { "\u0417\u0430\u043f\u043e\u043b\u043d\u0438\u0442\u044c", "\u0412\u043f\u0438\u0441\u0430\u0442\u044c" };
+    s.vidFillModes = { "\u0417\u0430\u043f\u043e\u043b\u043d\u0438\u0442\u044c", "\u0412\u043f\u0438\u0441\u0430\u0442\u044c" };
+    s.imgRotModes  = { "0\u00b0", "90\u00b0", "180\u00b0", "270\u00b0" };
+    s.vidRotModes  = s.imgRotModes;
     return s;
 }
