@@ -33,14 +33,14 @@
 #include <QFont>
 #include <QSizePolicy>
 #include <QPropertyAnimation>
+#include <QResizeEvent>
 #include <algorithm>
 #include <climits>
 
-// ---- Interval table (seconds) ----
 const int MainWindow::INTERVAL_VALUES[] = { 60, 300, 600, 900, 1800, 3600 };
 
 // ============================================================
-// ToggleSwitch  — compact iOS-style toggle
+// ToggleSwitch
 // ============================================================
 class ToggleSwitch : public QWidget {
     Q_OBJECT
@@ -80,12 +80,9 @@ protected:
     void paintEvent(QPaintEvent *) override {
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing);
-        // Track
         QColor track = m_checked ? QColor(0x23,0x86,0x36,230) : QColor(0x30,0x36,0x3d,220);
-        p.setBrush(track);
-        p.setPen(Qt::NoPen);
+        p.setBrush(track); p.setPen(Qt::NoPen);
         p.drawRoundedRect(0, 0, width(), height(), height()/2, height()/2);
-        // Knob
         p.setBrush(QColor(0xf0,0xf6,0xfc,230));
         p.drawEllipse(m_knobX, 3, 18, 18);
     }
@@ -96,7 +93,7 @@ private:
 };
 
 // ============================================================
-// App stylesheet
+// Stylesheet
 // ============================================================
 static const char *APP_STYLE = R"(
 * {
@@ -160,20 +157,17 @@ QPushButton {
 }
 QPushButton:hover { background: rgba(56,139,253,30); border: 1px solid #388bfd; color: #58a6ff; }
 QPushButton:pressed { background: rgba(56,139,253,20); }
-QPushButton#applyBtn {
-    background: #238636; border: 1px solid rgba(240,246,252,0.1);
-    border-radius: 8px; color: #fff; font-weight: 600; font-size: 14px;
-    min-height: 40px; max-height: 40px; padding: 0; letter-spacing: 0.5px;
-}
-QPushButton#applyBtn:hover { background: #2ea043; }
-QPushButton#applyBtn:pressed { background: #238636; }
 QPushButton#galleryAddBtn {
-    background: rgba(56,139,253,15); border: 1px solid rgba(56,139,253,60);
-    border-radius: 6px; color: #58a6ff; font-weight: 500;
-    padding: 0 14px; min-height: 26px; max-height: 26px;
-    font-size: 12px;
+    background: rgba(35,134,54,120);
+    border: 1px solid rgba(35,134,54,180);
+    border-radius: 6px; color: #7ee787; font-weight: 600;
+    padding: 0 18px; min-height: 30px; max-height: 30px;
+    font-size: 13px;
 }
-QPushButton#galleryAddBtn:hover { background: rgba(56,139,253,40); border-color: #58a6ff; }
+QPushButton#galleryAddBtn:hover {
+    background: rgba(46,160,67,180);
+    border-color: #2ea043; color: #aff7bf;
+}
 QPushButton#thumbRemove {
     background: rgba(218,54,51,160); border: none;
     border-radius: 9px; color: #fff; font-weight: 700;
@@ -205,7 +199,6 @@ QWidget#galleryThumb {
 QWidget#galleryThumb:hover { border-color: #58a6ff; }
 )";
 
-// ---- Helpers ----
 static QString orientStr(int t, const Strings &s)
 {
     switch(t){
@@ -301,8 +294,7 @@ protected:
                 QSize sc2=px.size().scaled(r.size(),Qt::KeepAspectRatioByExpanding);
                 QPixmap sp=px.scaled(sc2,Qt::IgnoreAspectRatio,Qt::SmoothTransformation);
                 int cx=(sp.width()-r.width())/2,cy=(sp.height()-r.height())/2;
-                p.setClipRect(r);
-                p.drawPixmap(r.topLeft(),sp,QRect(cx,cy,r.width(),r.height()));
+                p.setClipRect(r); p.drawPixmap(r.topLeft(),sp,QRect(cx,cy,r.width(),r.height()));
                 p.setClipping(false);
             } else if (mode==1) {
                 p.fillRect(r,QColor(16,10,30));
@@ -343,51 +335,6 @@ private:
 };
 #include "MainWindow.moc"
 
-// ---- Gallery thumbnail ----
-static QWidget* makeThumb(const GalleryItem &item, MainWindow *mw,
-                           const QString &removeTooltip)
-{
-    QWidget *w = new QWidget;
-    w->setFixedSize(96, 76);
-    w->setCursor(Qt::PointingHandCursor);
-    w->setToolTip(QFileInfo(item.path).fileName());
-    w->setObjectName("galleryThumb");
-    w->setProperty("itemPath",    item.path);
-    w->setProperty("itemIsVideo", item.isVideo);
-
-    QLabel *img = new QLabel(w);
-    img->setFixedSize(96, 76);
-    img->setAlignment(Qt::AlignCenter);
-    img->setObjectName("thumbImg");
-    img->setProperty("itemPath",    item.path);
-    img->setProperty("itemIsVideo", item.isVideo);
-
-    if (!item.isVideo) {
-        QPixmap px(item.path);
-        if (!px.isNull())
-            img->setPixmap(px.scaled(96, 76,
-                Qt::KeepAspectRatioByExpanding,
-                Qt::SmoothTransformation).copy(0,0,96,76));
-        else
-            img->setText(QFileInfo(item.path).suffix().toUpper());
-    } else {
-        img->setText("\u25b6 " + QFileInfo(item.path).suffix().toUpper());
-        img->setStyleSheet("background:rgba(20,10,40,200); color:#a78bfa; font-size:12px; font-weight:600;");
-    }
-
-    QPushButton *del = new QPushButton("\u00d7", w);
-    del->setFixedSize(18, 18);
-    del->move(78, 0);
-    del->setObjectName("thumbRemove");
-    del->setToolTip(removeTooltip);
-    QObject::connect(del, &QPushButton::clicked, [mw, path=item.path]{
-        mw->onGalleryRemove(path);
-    });
-
-    img->installEventFilter(mw);
-    return w;
-}
-
 // ============================================================
 // MainWindow
 // ============================================================
@@ -399,15 +346,11 @@ MainWindow::MainWindow(QWidget *parent)
     setWindowFlags(windowFlags() | Qt::FramelessWindowHint);
     m_s = stringsEN();
     qApp->setStyleSheet(APP_STYLE);
-
     ConfigManager::instance().load();
     buildUi();
     loadMonitors();
 }
 
-// ============================================================
-// Per-monitor slideshow helpers
-// ============================================================
 MonitorSlideshowState &MainWindow::slideshowState(const QString &monitor)
 {
     return m_ssState[monitor];
@@ -444,9 +387,6 @@ void MainWindow::tickMonitor(const QString &monitor)
     WallpaperApplier::applySlideshowTick(monitor, gallery, mode);
 }
 
-// ============================================================
-// Paint / drag
-// ============================================================
 void MainWindow::paintEvent(QPaintEvent *)
 {
     QPainter p(this);
@@ -519,14 +459,13 @@ void MainWindow::buildUi()
     scroll->setWidget(contents);
     outerLayout->addWidget(scroll);
 
-    // ── Title bar ──────────────────────────────────────────────
+    // ── Title bar ────────────────────────────────────────────
     {
         QHBoxLayout *tb = new QHBoxLayout;
         tb->setSpacing(6);
         QLabel *title = new QLabel("HyprWall");
         title->setStyleSheet("font-size:17px;font-weight:700;color:#c9d1d9;letter-spacing:1px;");
 
-        // Autostart: label + ToggleSwitch
         m_autostartLabel = new QLabel(m_s.autostartLabel);
         m_autostartLabel->setStyleSheet("color:#8b949e;font-size:12px;");
         m_autostartSwitch = new ToggleSwitch(this);
@@ -560,7 +499,7 @@ void MainWindow::buildUi()
         root->addLayout(tb);
     }
 
-    // ── Monitor bar ────────────────────────────────────────────
+    // ── Monitor bar ──────────────────────────────────────────
     m_monitorBar = new MonitorBar(this);
     m_monitorBar->setFixedHeight(160);
     m_monitorBar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
@@ -568,7 +507,7 @@ void MainWindow::buildUi()
     connect(m_monitorBar, &MonitorBar::monitorClicked, this, &MainWindow::onMonitorClicked);
     root->addWidget(m_monitorBar);
 
-    // ── Settings group ─────────────────────────────────────────
+    // ── Settings group ────────────────────────────────────────
     m_settingsGroup = new QGroupBox(m_s.groupTitle);
     m_settingsGroup->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Maximum);
     QVBoxLayout *sg = new QVBoxLayout(m_settingsGroup);
@@ -608,10 +547,10 @@ void MainWindow::buildUi()
                     if (m_currentMonitor.isEmpty()) return;
                     int secs = INTERVAL_VALUES[idx];
                     m_ssState[m_currentMonitor].intervalSecs = secs;
-                    m_pending[m_currentMonitor].slideshowInterval = secs;
                     if (m_ssState[m_currentMonitor].timer &&
                         m_ssState[m_currentMonitor].timer->isActive())
                         m_ssState[m_currentMonitor].timer->setInterval(secs * 1000);
+                    applyAndSaveCurrent();
                 });
         row->addWidget(m_intervalPrefixLbl);
         row->addWidget(m_intervalCombo);
@@ -635,7 +574,7 @@ void MainWindow::buildUi()
                     if (m_updatingControls) return;
                     if (m_currentMonitor.isEmpty()) return;
                     m_ssState[m_currentMonitor].mediaMode = idx;
-                    m_pending[m_currentMonitor].slideshowMode = idx;
+                    applyAndSaveCurrent();
                 });
         row->addWidget(m_mediaModeLabel);
         row->addWidget(m_mediaModeCombo, 1);
@@ -691,6 +630,8 @@ void MainWindow::buildUi()
         m_fillLabel->setStyleSheet("color:#8b949e;");
         m_fillCombo = new QComboBox;
         m_fillCombo->addItems(m_s.imgFillModes);
+        connect(m_fillCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                this, &MainWindow::onFillModeChanged);
         row->addWidget(m_fillLabel);
         row->addWidget(m_fillCombo, 1);
     }
@@ -707,6 +648,8 @@ void MainWindow::buildUi()
         m_rotLabel->setStyleSheet("color:#8b949e;");
         m_rotCombo = new QComboBox;
         m_rotCombo->addItems(m_s.imgRotModes);
+        connect(m_rotCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                this, &MainWindow::onRotationChanged);
         row->addWidget(m_rotLabel);
         row->addWidget(m_rotCombo, 1);
     }
@@ -732,15 +675,14 @@ void MainWindow::buildUi()
     m_bindRow->hide();
     sg->addWidget(m_bindRow);
 
-    // 9. Apply
-    m_applyBtn = new QPushButton(m_s.applyBtn);
-    m_applyBtn->setObjectName("applyBtn");
-    connect(m_applyBtn, &QPushButton::clicked, this, &MainWindow::onApplyAll);
-    sg->addWidget(m_applyBtn);
+    // NO Apply button — changes are instant
 
     root->addWidget(m_settingsGroup);
 }
 
+// ============================================================
+// Gallery panel
+// ============================================================
 void MainWindow::buildGalleryPanel(QVBoxLayout *parent)
 {
     m_galleryGroup = new QGroupBox(m_s.galleryTitle);
@@ -749,44 +691,40 @@ void MainWindow::buildGalleryPanel(QVBoxLayout *parent)
     vl->setSpacing(6);
     vl->setContentsMargins(8,14,8,8);
 
-    // Header row: title hint + spacer + add button
+    // Header: centred Add button with icon feel
     {
         QHBoxLayout *bar = new QHBoxLayout;
-        bar->setContentsMargins(0,0,0,0);
-        bar->setSpacing(6);
-        QLabel *hint = new QLabel;
-        hint->setStyleSheet("color:#484f58;font-size:11px;");
-        // hint text set in retranslateUi via m_galleryEmptyLbl (reuse via different label here)
+        bar->setContentsMargins(0,0,0,2);
+        bar->setSpacing(0);
         m_galleryAddBtn = new QPushButton(m_s.galleryAddBtn);
         m_galleryAddBtn->setObjectName("galleryAddBtn");
-        m_galleryAddBtn->setFixedHeight(26);
-        m_galleryAddBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        m_galleryAddBtn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        m_galleryAddBtn->setFixedHeight(30);
         connect(m_galleryAddBtn, &QPushButton::clicked, this, &MainWindow::onGalleryAdd);
-        bar->addStretch();
         bar->addWidget(m_galleryAddBtn);
         vl->addLayout(bar);
     }
 
-    // Scroll area — adaptive height (min 80, max 280)
-    QScrollArea *scroll = new QScrollArea;
-    scroll->setWidgetResizable(true);
-    scroll->setMinimumHeight(80);
-    scroll->setMaximumHeight(280);
-    scroll->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    scroll->setStyleSheet("background:transparent;border:none;");
+    // Gallery scroll area — grows with content, max 320px
+    m_galleryScroll = new QScrollArea;
+    m_galleryScroll->setWidgetResizable(true);
+    m_galleryScroll->setMinimumHeight(60);
+    m_galleryScroll->setMaximumHeight(320);
+    m_galleryScroll->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    m_galleryScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_galleryScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    m_galleryScroll->setStyleSheet("background:transparent;border:none;");
 
     m_galleryGrid = new QWidget;
     m_galleryGrid->setObjectName("galleryGrid");
     m_galleryGrid->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    scroll->setWidget(m_galleryGrid);
+    m_galleryScroll->setWidget(m_galleryGrid);
 
     m_galleryEmptyLbl = new QLabel(m_s.galleryEmptyHint);
     m_galleryEmptyLbl->setAlignment(Qt::AlignCenter);
     m_galleryEmptyLbl->setObjectName("galleryEmpty");
 
-    vl->addWidget(scroll);
+    vl->addWidget(m_galleryScroll);
     parent->addWidget(m_galleryGroup);
 
     refreshGallery();
@@ -794,56 +732,60 @@ void MainWindow::buildGalleryPanel(QVBoxLayout *parent)
 
 void MainWindow::refreshGallery()
 {
+    // Clear old layout
     QLayout *old = m_galleryGrid->layout();
     if (old) {
-        QLayoutItem *item;
-        while ((item = old->takeAt(0)) != nullptr) {
-            if (item->widget()) item->widget()->deleteLater();
-            delete item;
+        QLayoutItem *it;
+        while ((it = old->takeAt(0)) != nullptr) {
+            if (it->widget()) it->widget()->deleteLater();
+            delete it;
         }
         delete old;
     }
 
     QList<GalleryItem> items = ConfigManager::instance().loadGallery();
+
     if (items.isEmpty()) {
         QVBoxLayout *vl = new QVBoxLayout(m_galleryGrid);
         vl->setAlignment(Qt::AlignCenter);
-        vl->setContentsMargins(0, 16, 0, 16);
+        vl->setContentsMargins(0, 12, 0, 12);
         vl->addWidget(m_galleryEmptyLbl);
         m_galleryEmptyLbl->show();
-        // shrink scroll area when empty
-        if (auto *sa = qobject_cast<QScrollArea*>(m_galleryGrid->parentWidget()->parentWidget()))
-            sa->setMinimumHeight(60);
+        m_galleryScroll->setMinimumHeight(50);
+        m_galleryScroll->setMaximumHeight(70);
         return;
     }
     m_galleryEmptyLbl->hide();
 
-    // Calculate adaptive thumb size based on available width
+    // Adaptive columns: fit as many thumbs as possible
     const int SPACING = 4;
     const int MARGIN  = 4;
-    int availW = m_galleryGrid->parentWidget()
-                     ? m_galleryGrid->parentWidget()->width() - 2*MARGIN
-                     : 400;
-    // Aim for ~5 columns, minimum thumb 72px
-    int COLS = std::max(3, (availW + SPACING) / (96 + SPACING));
-    int thumbW = (availW - (COLS-1)*SPACING - 2*MARGIN) / COLS;
-    thumbW = std::max(72, std::min(thumbW, 120));
-    int thumbH = (thumbW * 3) / 4; // 4:3 ratio
+    int availW = m_galleryScroll->viewport()
+                     ? m_galleryScroll->viewport()->width() - 2*MARGIN
+                     : (m_galleryScroll->width() - 20);
+    if (availW < 60) availW = 400; // fallback before first paint
 
+    // Thumb aspect 4:3, try to fit cols
+    int thumbW = 96;
+    int COLS = std::max(2, (availW + SPACING) / (thumbW + SPACING));
+    thumbW = (availW - (COLS-1)*SPACING - 2*MARGIN) / COLS;
+    thumbW = std::max(60, std::min(thumbW, 130));
+    int thumbH = (thumbW * 3) / 4;
+
+    // Compute total grid height and clamp scroll area
     int rows = (items.size() + COLS - 1) / COLS;
-    int gridH = rows * (thumbH + SPACING) + 2*MARGIN;
-    // Adaptive scroll area max height: show up to 2 full rows + partial
-    int saMax = std::max(80, std::min(gridH + 8, 280));
-    if (auto *sa = qobject_cast<QScrollArea*>(m_galleryGrid->parentWidget()->parentWidget()))
-        sa->setMaximumHeight(saMax);
+    int gridH = rows * (thumbH + SPACING) + 2*MARGIN + SPACING;
+    int saH = std::min(gridH + 4, 320);
+    m_galleryScroll->setMinimumHeight(std::min(gridH + 4, 70 + thumbH));
+    m_galleryScroll->setMaximumHeight(saH);
 
     QGridLayout *grid = new QGridLayout(m_galleryGrid);
     grid->setSpacing(SPACING);
     grid->setContentsMargins(MARGIN,MARGIN,MARGIN,MARGIN);
     grid->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+
     int col = 0, row = 0;
     for (const GalleryItem &item : items) {
-        // Create thumb with computed size
         QWidget *thumb = new QWidget;
         thumb->setFixedSize(thumbW, thumbH);
         thumb->setCursor(Qt::PointingHandCursor);
@@ -869,7 +811,8 @@ void MainWindow::refreshGallery()
                 img->setText(QFileInfo(item.path).suffix().toUpper());
         } else {
             img->setText("\u25b6 " + QFileInfo(item.path).suffix().toUpper());
-            img->setStyleSheet("background:rgba(20,10,40,200);color:#a78bfa;font-size:12px;font-weight:600;");
+            img->setStyleSheet("background:rgba(20,10,40,200);color:#a78bfa;"
+                               "font-size:12px;font-weight:600;");
         }
 
         QPushButton *del = new QPushButton("\u00d7", thumb);
@@ -888,20 +831,43 @@ void MainWindow::refreshGallery()
     }
 }
 
+// ============================================================
+// Instant apply helper
+// ============================================================
+void MainWindow::applyAndSaveCurrent()
+{
+    if (m_currentMonitor.isEmpty() || m_updatingControls) return;
+    saveCurrentToPending();
+
+    const WallpaperConfig &cfg = m_pending[m_currentMonitor];
+    const MonitorSlideshowState &ss = m_ssState[m_currentMonitor];
+
+    auto &cm = ConfigManager::instance();
+    cm.setConfig(m_currentMonitor, cfg);
+    cm.save();
+
+    if (ss.enabled) {
+        startSlideshowForMonitor(m_currentMonitor);
+    } else {
+        stopSlideshowForMonitor(m_currentMonitor);
+        if (!cfg.filePath.isEmpty())
+            WallpaperApplier::apply(cfg);
+    }
+
+    bool vid = WallpaperApplier::isVideoFile(cfg.filePath);
+    m_monitorBar->setMonitorMode(m_currentMonitor, vid?1:0, vid?QString():cfg.filePath);
+}
+
 void MainWindow::updateAutostartSwitch()
 {
     if (!m_autostartSwitch) return;
-    bool en = autostartEnabled();
-    // block signal to avoid re-entrant toggle
     QSignalBlocker blocker(m_autostartSwitch);
-    m_autostartSwitch->setChecked(en);
+    m_autostartSwitch->setChecked(autostartEnabled());
 }
 
 void MainWindow::onAutostartToggle()
 {
-    // ToggleSwitch already flipped its visual state; sync the file
-    bool shouldEnable = m_autostartSwitch->isChecked();
-    setAutostart(shouldEnable);
+    setAutostart(m_autostartSwitch->isChecked());
 }
 
 void MainWindow::updateSlideshowDependentWidgets(bool ssOn)
@@ -942,7 +908,6 @@ void MainWindow::retranslateUi()
     m_volumeLabelW->setText(m_s.volumeLabel);
     m_fillLabel->setText(m_s.fillLabel);
     m_rotLabel->setText(m_s.rotLabel);
-    m_applyBtn->setText(m_s.applyBtn);
     m_bindPrefixLabel->setText(m_s.bindPrefix);
     m_autostartLabel->setText(m_s.autostartLabel);
     m_galleryGroup->setTitle(m_s.galleryTitle);
@@ -951,23 +916,25 @@ void MainWindow::retranslateUi()
     m_slideshowCheck->setText(m_s.slideshowLabel);
     m_intervalPrefixLbl->setText(m_s.slideshowIntervalLabel);
     m_intervalSuffixLbl->setText(m_s.slideshowMinLabel);
-    // Media mode label
     m_mediaModeLabel->setText(m_s.slideshowModeLabel);
-    // Media mode combo
+
+    // Retranslate media mode combo (RU/EN)
     int mi = m_mediaModeCombo->currentIndex();
     m_mediaModeCombo->blockSignals(true);
     m_mediaModeCombo->clear();
     m_mediaModeCombo->addItems(m_s.slideshowModes);
-    m_mediaModeCombo->setCurrentIndex(mi);
+    m_mediaModeCombo->setCurrentIndex(std::max(0, mi));
     m_mediaModeCombo->blockSignals(false);
+
     // Interval combo
     int ci = m_intervalCombo->currentIndex();
     m_intervalCombo->blockSignals(true);
     m_intervalCombo->clear();
     m_intervalCombo->addItems(m_s.intervalLabels);
-    m_intervalCombo->setCurrentIndex(ci);
+    m_intervalCombo->setCurrentIndex(std::max(0, ci));
     m_intervalCombo->blockSignals(false);
-    // Fill/rot combos
+
+    // Fill / rot combos
     int fi = m_fillCombo->currentIndex(), ri = m_rotCombo->currentIndex();
     m_fillCombo->blockSignals(true); m_rotCombo->blockSignals(true);
     m_fillCombo->clear(); m_rotCombo->clear();
@@ -976,6 +943,7 @@ void MainWindow::retranslateUi()
     m_fillCombo->setCurrentIndex(std::min(fi, m_fillCombo->count()-1));
     m_rotCombo->setCurrentIndex(std::min(ri, m_rotCombo->count()-1));
     m_fillCombo->blockSignals(false); m_rotCombo->blockSignals(false);
+
     if (!m_currentMonitor.isEmpty()) populateSettings(m_currentMonitor);
     m_monitorBar->update();
 }
@@ -1030,7 +998,6 @@ void MainWindow::onMonitorClicked(const QString &name)
     auto it = std::find_if(m_monitors.cbegin(), m_monitors.cend(),
         [&](const MonitorInfo &m){ return m.name == name; });
     if (it == m_monitors.cend()) return;
-    saveCurrentToPending();
     m_currentMonitor = name;
     m_monitorBar->setSelected(name);
     populateSettings(name);
@@ -1063,9 +1030,9 @@ void MainWindow::populateSettings(const QString &monitorName)
     for (int i = 0; i < 6; ++i)
         if (INTERVAL_VALUES[i] == ss.intervalSecs) { sIdx = i; break; }
     m_intervalCombo->setCurrentIndex(sIdx);
-    m_mediaModeCombo->setCurrentIndex(ss.mediaMode);
+    m_mediaModeCombo->setCurrentIndex(std::max(0, std::min(ss.mediaMode, m_mediaModeCombo->count()-1)));
 
-    bool isVid = WallpaperApplier::isVideoFile(cfg.filePath);
+    bool isVid = !cfg.filePath.isEmpty() && WallpaperApplier::isVideoFile(cfg.filePath);
     m_isVideo = !isVid;
     switchToVideo(isVid);
 
@@ -1107,6 +1074,7 @@ void MainWindow::saveCurrentToPending()
     m_pending[m_currentMonitor] = cfg;
 }
 
+// onApplyAll kept for --daemon path, not called from UI anymore
 void MainWindow::onApplyAll()
 {
     saveCurrentToPending();
@@ -1142,10 +1110,13 @@ void MainWindow::onApplyAll()
 
 void MainWindow::onGalleryAdd()
 {
-    QString title  = m_isRU ? QString("\u0414\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u0432 \u0433\u0430\u043b\u0435\u0440\u0435\u044e") : QString("Add to gallery");
-    QString filter = m_isRU ? QString("\u0424\u043e\u0442\u043e \u0438 \u0432\u0438\u0434\u0435\u043e") : QString("Images and video");
+    QString title  = m_isRU ? QString("\u0414\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u0432 \u0433\u0430\u043b\u0435\u0440\u0435\u044e")
+                             : QString("Add to gallery");
+    QString filter = m_isRU ? QString("\u0424\u043e\u0442\u043e \u0438 \u0432\u0438\u0434\u0435\u043e")
+                             : QString("Images and video");
     filter += " (*.jpg *.jpeg *.png *.bmp *.webp *.gif *.mp4 *.mkv *.avi *.webm *.mov);;";
-    filter += m_isRU ? QString("\u0412\u0441\u0435 \u0444\u0430\u0439\u043b\u044b (*)") : QString("All files (*)");
+    filter += m_isRU ? QString("\u0412\u0441\u0435 \u0444\u0430\u0439\u043b\u044b (*)")
+                     : QString("All files (*)");
     QStringList paths = QFileDialog::getOpenFileNames(this, title, smartBrowseDir(), filter);
     if (paths.isEmpty()) return;
     ConfigManager::instance().addToGallery(paths);
@@ -1167,8 +1138,7 @@ void MainWindow::onGalleryItemClicked(const QString &path, bool isVideo)
 {
     if (m_currentMonitor.isEmpty()) return;
     if (!m_pending.contains(m_currentMonitor)) {
-        WallpaperConfig cfg;
-        cfg.monitorName = m_currentMonitor;
+        WallpaperConfig cfg; cfg.monitorName = m_currentMonitor;
         m_pending[m_currentMonitor] = cfg;
     }
     m_pending[m_currentMonitor].filePath = path;
@@ -1180,6 +1150,8 @@ void MainWindow::onGalleryItemClicked(const QString &path, bool isVideo)
     else m_bindRow->hide();
     m_monitorBar->setMonitorMode(m_currentMonitor, isVideo?1:0,
                                  isVideo?QString():path);
+    // Instant apply
+    applyAndSaveCurrent();
 }
 
 void MainWindow::onSlideshowToggled(bool checked)
@@ -1190,16 +1162,9 @@ void MainWindow::onSlideshowToggled(bool checked)
     ss.enabled = checked;
     ss.intervalSecs = INTERVAL_VALUES[m_intervalCombo->currentIndex()];
     ss.mediaMode    = m_mediaModeCombo->currentIndex();
-    if (m_pending.contains(m_currentMonitor)) {
-        m_pending[m_currentMonitor].slideshowEnabled  = checked;
-        m_pending[m_currentMonitor].slideshowInterval = ss.intervalSecs;
-        m_pending[m_currentMonitor].slideshowMode     = ss.mediaMode;
-    }
     updateSlideshowDependentWidgets(checked);
-    if (checked) {
-        startSlideshowForMonitor(m_currentMonitor);
-    } else {
-        stopSlideshowForMonitor(m_currentMonitor);
+    applyAndSaveCurrent();
+    if (!checked) {
         bool isVid = m_pending.contains(m_currentMonitor) &&
                      WallpaperApplier::isVideoFile(m_pending[m_currentMonitor].filePath);
         m_audioRow->setVisible(isVid);
@@ -1209,15 +1174,24 @@ void MainWindow::onSlideshowToggled(bool checked)
     }
 }
 
-void MainWindow::onFillModeChanged(int) {}
-void MainWindow::onRotationChanged(int) {}
+void MainWindow::onFillModeChanged(int)
+{
+    applyAndSaveCurrent();
+}
+
+void MainWindow::onRotationChanged(int)
+{
+    applyAndSaveCurrent();
+}
 
 void MainWindow::onAudioToggled(bool checked)
 {
     m_volumeRow->setVisible(checked);
+    applyAndSaveCurrent();
 }
 
 void MainWindow::onVolumeChanged(int val)
 {
     m_volumeLabel->setText(QString("%1%").arg(val));
+    applyAndSaveCurrent();
 }
