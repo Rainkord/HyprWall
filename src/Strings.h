@@ -35,8 +35,10 @@ struct Strings {
     QString galleryRemoveTooltip;
     // Slideshow
     QString slideshowLabel;
-    QString slideshowIntervalLabel;   // "every X min"
-    QString slideshowMinLabel;        // "min"
+    QString slideshowIntervalLabel;
+    QString slideshowMinLabel;
+    QString slideshowModeLabel;       // "Media type:"
+    QStringList slideshowModes;       // { "Photos", "Videos", "Both" }
     // Interval preset labels
     QStringList intervalLabels;
 };
@@ -53,7 +55,7 @@ inline Strings stringsEN()
     s.volumeLabel      = "Volume:";
     s.fillLabel        = "Fill:";
     s.rotLabel         = "Rotation:";
-    s.applyBtn         = "Apply to all monitors";
+    s.applyBtn         = "Apply";
     s.bindPrefix       = "Hyprland audio toggle bind:";
     s.errTitle         = "Error";
     s.errBody          = "Failed to apply wallpaper. Is hyprpaper/mpvpaper running?";
@@ -78,6 +80,8 @@ inline Strings stringsEN()
     s.slideshowLabel         = "Slideshow";
     s.slideshowIntervalLabel = "every";
     s.slideshowMinLabel      = "min";
+    s.slideshowModeLabel     = "Media type:";
+    s.slideshowModes         = { "Photos only", "Videos only", "Both" };
     s.intervalLabels = { "1", "5", "10", "15", "30", "60" };
     return s;
 }
@@ -94,7 +98,7 @@ inline Strings stringsRU()
     s.volumeLabel      = "\u0413\u0440\u043e\u043c\u043a\u043e\u0441\u0442\u044c:";
     s.fillLabel        = "\u0417\u0430\u043f\u043e\u043b\u043d\u0435\u043d\u0438\u0435:";
     s.rotLabel         = "\u041f\u043e\u0432\u043e\u0440\u043e\u0442:";
-    s.applyBtn         = "\u041f\u0440\u0438\u043c\u0435\u043d\u0438\u0442\u044c \u043a\u043e \u0432\u0441\u0435\u043c \u044d\u043a\u0440\u0430\u043d\u0430\u043c";
+    s.applyBtn         = "\u041f\u0440\u0438\u043c\u0435\u043d\u0438\u0442\u044c";
     s.bindPrefix       = "\u0411\u0438\u043d\u0434 Hyprland \u0434\u043b\u044f \u0437\u0432\u0443\u043a\u0430 \u0432\u0438\u0434\u0435\u043e:";
     s.errTitle         = "\u041e\u0448\u0438\u0431\u043a\u0430";
     s.errBody          = "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0443\u0441\u0442\u0430\u043d\u043e\u0432\u0438\u0442\u044c \u043e\u0431\u043e\u0438. \u0417\u0430\u043f\u0443\u0449\u0435\u043d hyprpaper/mpvpaper?";
@@ -119,6 +123,8 @@ inline Strings stringsRU()
     s.slideshowLabel         = "\u0421\u043b\u0430\u0439\u0434-\u0448\u043e\u0443";
     s.slideshowIntervalLabel = "\u043a\u0430\u0436\u0434\u044b\u0435";
     s.slideshowMinLabel      = "\u043c\u0438\u043d";
+    s.slideshowModeLabel     = "\u0422\u0438\u043f \u043c\u0435\u0434\u0438\u0430:";
+    s.slideshowModes         = { "\u0422\u043e\u043b\u044c\u043a\u043e \u0444\u043e\u0442\u043e", "\u0422\u043e\u043b\u044c\u043a\u043e \u0432\u0438\u0434\u0435\u043e", "\u0424\u043e\u0442\u043e + \u0432\u0438\u0434\u0435\u043e" };
     s.intervalLabels = { "1", "5", "10", "15", "30", "60" };
     return s;
 }
