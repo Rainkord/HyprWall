@@ -198,6 +198,7 @@ public:
     explicit MonitorBar(QWidget *p=nullptr) : QWidget(p) {
         setMinimumHeight(150);
         setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        setCursor(Qt::PointingHandCursor);
     }
     void setMonitors(const QList<MonitorInfo> &m)
         { m_monitors=m; m_selected=m.isEmpty()?QString():m.first().name; update(); }
@@ -362,7 +363,7 @@ void MainWindow::buildUi()
 {
     setWindowTitle(m_s.windowTitle);
     setMinimumWidth(460);
-    resize(560, 520);
+    resize(560, 480);
 
     QWidget *central=new QWidget(this);
     central->setObjectName("central");
@@ -412,23 +413,13 @@ void MainWindow::buildUi()
         root->addLayout(tb);
     }
 
-    // ─ Monitor bar
+    // ─ Monitor bar (click to select)
     m_monitorBar=new MonitorBar(this);
     m_monitorBar->setFixedHeight(160);
     m_monitorBar->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
     m_monitorBar->setNoMonitorsText(m_s.noMonitors);
-    connect(m_monitorBar,&MonitorBar::monitorClicked,this,[this](const QString &name){
-        int idx=m_monitorCombo->findText(name);
-        if(idx>=0) m_monitorCombo->setCurrentIndex(idx);
-    });
+    connect(m_monitorBar,&MonitorBar::monitorClicked,this,&MainWindow::onMonitorClicked);
     root->addWidget(m_monitorBar);
-
-    // ─ Monitor selector
-    {
-        m_monitorLabel=makeLabel(m_s.monitorLabel,"monitorLabel");
-        m_monitorCombo=new QComboBox;
-        root->addWidget(makeRow(m_monitorLabel,m_monitorCombo));
-    }
 
     // ─ Settings group
     m_settingsGroup=new QGroupBox(m_s.groupTitle);
@@ -503,9 +494,6 @@ void MainWindow::buildUi()
     sg->addWidget(m_applyBtn);
 
     root->addWidget(m_settingsGroup);
-
-    connect(m_monitorCombo,QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this,&MainWindow::onMonitorSelected);
 }
 
 void MainWindow::switchToVideo(bool isVideo)
@@ -527,7 +515,6 @@ void MainWindow::retranslateUi()
     setWindowTitle(m_s.windowTitle);
     m_langLabel->setText(m_s.langLabel);
     m_monitorBar->setNoMonitorsText(m_s.noMonitors);
-    m_monitorLabel->setText(m_s.monitorLabel);
     m_settingsGroup->setTitle(m_s.groupTitle);
     m_fileLabel->setText(m_s.fileLabel);
     m_browseBtn->setText(m_s.browseBtn);
@@ -561,27 +548,26 @@ void MainWindow::loadMonitors()
 {
     m_monitors=MonitorDetector::detect();
     m_monitorBar->setMonitors(m_monitors);
-    m_monitorCombo->blockSignals(true); m_monitorCombo->clear();
     auto &cm=ConfigManager::instance();
     for(const MonitorInfo &m:m_monitors){
-        m_monitorCombo->addItem(m.name);
         WallpaperConfig cfg=cm.getConfig(m.name);
         if(!cfg.filePath.isEmpty()){
             bool vid=WallpaperApplier::isVideoFile(cfg.filePath);
             m_monitorBar->setMonitorMode(m.name,vid?1:0,vid?QString():cfg.filePath);
         }
     }
-    m_monitorCombo->blockSignals(false);
-    if(!m_monitors.isEmpty()){m_monitorCombo->setCurrentIndex(0);onMonitorSelected(0);}
+    if(!m_monitors.isEmpty()) onMonitorClicked(m_monitors.first().name);
 }
 
-void MainWindow::onMonitorSelected(int index)
+void MainWindow::onMonitorClicked(const QString &name)
 {
-    if(index<0||index>=m_monitors.size()) return;
+    auto it=std::find_if(m_monitors.cbegin(),m_monitors.cend(),
+        [&](const MonitorInfo &m){ return m.name==name; });
+    if(it==m_monitors.cend()) return;
     saveCurrentSettings();
-    m_currentMonitor=m_monitors[index].name;
-    m_monitorBar->setSelected(m_currentMonitor);
-    populateSettings(m_currentMonitor);
+    m_currentMonitor=name;
+    m_monitorBar->setSelected(name);
+    populateSettings(name);
 }
 
 void MainWindow::populateSettings(const QString &monitorName)

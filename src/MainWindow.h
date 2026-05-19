@@ -27,7 +27,7 @@ protected:
     void mouseMoveEvent(QMouseEvent *) override;
 
 private slots:
-    void onMonitorSelected(int index);
+    void onMonitorClicked(const QString &name);
     void onBrowseFile();
     void onApply();
     void onFillModeChanged(int);
@@ -49,10 +49,7 @@ private:
     bool isAutostartEnabled() const;
     void updateAutostartButton();
 
-    // UI widgets
     MonitorBar      *m_monitorBar      = nullptr;
-    QLabel          *m_monitorLabel    = nullptr;
-    QComboBox       *m_monitorCombo    = nullptr;
     QGroupBox       *m_settingsGroup   = nullptr;
     QLabel          *m_orientationLabel= nullptr;
     QLabel          *m_fileLabel       = nullptr;
@@ -75,7 +72,6 @@ private:
     QLabel          *m_autostartLabel  = nullptr;
     QPushButton     *m_autostartBtn    = nullptr;
 
-    // State
     QList<MonitorInfo> m_monitors;
     QString            m_currentMonitor;
     QPoint             m_dragPos;

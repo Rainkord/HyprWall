@@ -5,7 +5,6 @@
 struct Strings {
     QString windowTitle;
     QString noMonitors;
-    QString monitorLabel;
     QString groupTitle;
     QString fileLabel;
     QString browseBtn;
@@ -21,15 +20,12 @@ struct Strings {
     QString autostartLabel;
     QString autostartEnable;
     QString autostartDisable;
-    // Orientation strings
     QString orientLandscape;
     QString orientPortrait90;
     QString orientLandscape180;
     QString orientPortrait270;
-    // Fill modes
     QStringList imgFillModes;
     QStringList vidFillModes;
-    // Rotation modes
     QStringList imgRotModes;
     QStringList vidRotModes;
 };
@@ -39,7 +35,6 @@ inline Strings stringsEN()
     Strings s;
     s.windowTitle      = "HyprWall";
     s.noMonitors       = "No monitors detected";
-    s.monitorLabel     = "Monitor:";
     s.groupTitle       = "WALLPAPER SETTINGS";
     s.fileLabel        = "File:";
     s.browseBtn        = "Browse";
@@ -71,8 +66,7 @@ inline Strings stringsRU()
     Strings s;
     s.windowTitle      = "HyprWall";
     s.noMonitors       = "\u041c\u043e\u043d\u0438\u0442\u043e\u0440\u044b \u043d\u0435 \u043e\u0431\u043d\u0430\u0440\u0443\u0436\u0435\u043d\u044b";
-    s.monitorLabel     = "\u041c\u043e\u043d\u0438\u0442\u043e\u0440:";
-    s.groupTitle       = "\u041d\u0410\u0421\u0422\u0420\u041e\u0419\u041a\u0418 \u041e\u0411\u041e\u0418";
+    s.groupTitle       = "\u041d\u0410\u0421\u0422\u0420\u041e\u0419\u041a\u0418 \u041e\u0411\u041e\u0415\u0412";
     s.fileLabel        = "\u0424\u0430\u0439\u043b:";
     s.browseBtn        = "\u041e\u0431\u0437\u043e\u0440";
     s.audioCheck       = "\u0412\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0430\u0443\u0434\u0438\u043e";
