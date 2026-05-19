@@ -10,6 +10,7 @@ public:
     void save();
     WallpaperConfig getConfig(const QString &monitor) const;
     void setConfig(const QString &monitor, const WallpaperConfig &cfg);
+    const QMap<QString, WallpaperConfig>& configs() const { return m_configs; }
 private:
     ConfigManager() = default;
     static QString configPath();

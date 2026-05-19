@@ -32,22 +32,17 @@ QString WallpaperApplier::fillModeToHyprpaper(FillMode mode)
     }
 }
 
-// Video: fill 0=Cover, 1=Contain, 2=Fill(stretch)
-// Video: rot  0=None, 1=90, 2=180, 3=270, 4=flipH, 5=flipV
 static QString mpvOptions(int fillIdx, int rotIdx, bool audio, int volume)
 {
     QStringList opts;
     opts << "--loop";
-
     switch (fillIdx) {
         case 0: opts << "--panscan=1.0";    break;
         case 1: opts << "--keepaspect=yes"; break;
         case 2: opts << "--keepaspect=no";  break;
         default: opts << "--keepaspect=yes"; break;
     }
-
     switch (rotIdx) {
-        case 0: break;
         case 1: opts << "--video-rotate=90";  break;
         case 2: opts << "--video-rotate=180"; break;
         case 3: opts << "--video-rotate=270"; break;
@@ -55,12 +50,10 @@ static QString mpvOptions(int fillIdx, int rotIdx, bool audio, int volume)
         case 5: opts << "--vf=vflip";         break;
         default: break;
     }
-
     if (!audio)
         opts << "--no-audio";
     else
         opts << QString("--volume=%1").arg(volume);
-
     return opts.join(" ");
 }
 
@@ -69,19 +62,32 @@ QString WallpaperApplier::prepareRotatedImage(const QString &src, WallpaperRotat
     if (rot == WallpaperRotation::Normal) return QString();
     QImage img(src);
     if (img.isNull()) { qWarning() << "prepareRotatedImage: cannot load" << src; return QString(); }
-    QTransform t;
-    bool mirrorH = false, mirrorV = false;
+    QImage result;
     switch (rot) {
-        case WallpaperRotation::Clockwise90:    t.rotate(90);   break;
-        case WallpaperRotation::Clockwise180:   t.rotate(180);  break;
-        case WallpaperRotation::Clockwise270:   t.rotate(270);  break;
-        case WallpaperRotation::FlipHorizontal: mirrorH = true; break;
-        case WallpaperRotation::FlipVertical:   mirrorV = true; break;
-        default: break;
+        case WallpaperRotation::Clockwise90: {
+            QTransform t; t.rotate(90);
+            result = img.transformed(t, Qt::SmoothTransformation);
+            break;
+        }
+        case WallpaperRotation::Clockwise180: {
+            QTransform t; t.rotate(180);
+            result = img.transformed(t, Qt::SmoothTransformation);
+            break;
+        }
+        case WallpaperRotation::Clockwise270: {
+            QTransform t; t.rotate(270);
+            result = img.transformed(t, Qt::SmoothTransformation);
+            break;
+        }
+        case WallpaperRotation::FlipHorizontal:
+            result = img.flipped(Qt::Horizontal);
+            break;
+        case WallpaperRotation::FlipVertical:
+            result = img.flipped(Qt::Vertical);
+            break;
+        default:
+            return QString();
     }
-    QImage result = (mirrorH || mirrorV)
-        ? img.mirrored(mirrorH, mirrorV)
-        : img.transformed(t, Qt::SmoothTransformation);
     QString cacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + "/HyprWall";
     QDir().mkpath(cacheDir);
     QString tmp = cacheDir + "/" + QFileInfo(src).baseName() + "_rot.png";
@@ -123,14 +129,12 @@ static bool applyViaIPC(const QString &monitor, const QString &path, const QStri
         QString out = p.readAllStandardOutput().trimmed();
         qDebug() << "preload ->" << (out.isEmpty() ? "(empty=ok)" : out);
     }
-
     QString ipcArg = QString("%1, %2, %3").arg(monitor, path, fitMode);
     QProcess p;
     p.start("hyprctl", {"hyprpaper", "wallpaper", ipcArg});
     p.waitForFinished(3000);
     QString out = p.readAllStandardOutput().trimmed();
     qDebug() << "wallpaper IPC ->" << (out.isEmpty() ? "(empty=ok)" : out);
-
     return !out.toLower().contains("error") && !out.toLower().contains("bad");
 }
 
