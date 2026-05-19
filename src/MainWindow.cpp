@@ -17,6 +17,7 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QListWidgetItem>
+#include <QScrollArea>
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QProcess>
@@ -505,7 +506,7 @@ void MainWindow::mouseMoveEvent(QMouseEvent *e)
 bool MainWindow::eventFilter(QObject *obj, QEvent *ev)
 {
     // Handle clicks on the gallery list widget
-    if (obj == m_galleryList && ev->type() == QEvent::MouseButtonRelease) {
+    if (obj == m_galleryList->viewport() && ev->type() == QEvent::MouseButtonRelease) {
         auto *me = static_cast<QMouseEvent*>(ev);
         QListWidgetItem *it = m_galleryList->itemAt(me->pos());
         if (it) {
