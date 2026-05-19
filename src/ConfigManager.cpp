@@ -1,7 +1,11 @@
 #include "ConfigManager.h"
+#include "WallpaperApplier.h"
 #include <QSettings>
 #include <QStandardPaths>
 #include <QDir>
+#include <QFileInfo>
+#include <QFile>
+#include <QDebug>
 
 ConfigManager& ConfigManager::instance()
 {
@@ -16,10 +20,28 @@ QString ConfigManager::configPath()
     return dir + "/config.ini";
 }
 
+QString ConfigManager::galleryDir()
+{
+    // ~/.local/share/hyprwall/gallery — users don't browse there normally
+    QString dir = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)
+                  + "/hyprwall/gallery";
+    QDir().mkpath(dir);
+    return dir;
+}
+
 void ConfigManager::load()
 {
     QSettings s(configPath(), QSettings::IniFormat);
+
+    // Slideshow
+    s.beginGroup("Slideshow");
+    m_slideshow.enabled      = s.value("enabled",      false).toBool();
+    m_slideshow.intervalSecs = s.value("intervalSecs", 300).toInt();
+    s.endGroup();
+
+    // Per-monitor configs
     for (const QString &mon : s.childGroups()) {
+        if (mon == "Slideshow") continue;
         s.beginGroup(mon);
         WallpaperConfig cfg;
         cfg.monitorName  = mon;
@@ -27,7 +49,7 @@ void ConfigManager::load()
         cfg.fillMode     = static_cast<FillMode>(s.value("fillMode", 0).toInt());
         cfg.rotation     = static_cast<WallpaperRotation>(s.value("rotation", 0).toInt());
         cfg.audioEnabled = s.value("audioEnabled", false).toBool();
-        cfg.audioVolume  = s.value("audioVolume", 50).toInt();
+        cfg.audioVolume  = s.value("audioVolume",  50).toInt();
         m_configs[mon]   = cfg;
         s.endGroup();
     }
@@ -37,6 +59,14 @@ void ConfigManager::save()
 {
     QSettings s(configPath(), QSettings::IniFormat);
     s.clear();
+
+    // Slideshow
+    s.beginGroup("Slideshow");
+    s.setValue("enabled",      m_slideshow.enabled);
+    s.setValue("intervalSecs", m_slideshow.intervalSecs);
+    s.endGroup();
+
+    // Per-monitor
     for (auto it = m_configs.cbegin(); it != m_configs.cend(); ++it) {
         const WallpaperConfig &cfg = it.value();
         s.beginGroup(it.key());
@@ -49,12 +79,52 @@ void ConfigManager::save()
     }
 }
 
-WallpaperConfig ConfigManager::getConfig(const QString &monitor) const
+QList<GalleryItem> ConfigManager::loadGallery() const
 {
-    return m_configs.value(monitor, WallpaperConfig{monitor});
+    QList<GalleryItem> items;
+    const QStringList imageExts = {"jpg","jpeg","png","bmp","webp","tiff"};
+    const QStringList videoExts = {"mp4","mkv","avi","webm","mov","gif","flv","wmv"};
+    QDir d(galleryDir());
+    d.setSorting(QDir::Time | QDir::Reversed);
+    QStringList allExts;
+    for (auto &e : imageExts) allExts << ("*." + e) << ("*." + e.toUpper());
+    for (auto &e : videoExts) allExts << ("*." + e) << ("*." + e.toUpper());
+    d.setNameFilters(allExts);
+    for (const QFileInfo &fi : d.entryInfoList(QDir::Files)) {
+        GalleryItem item;
+        item.path    = fi.absoluteFilePath();
+        item.isVideo = videoExts.contains(fi.suffix().toLower());
+        items << item;
+    }
+    return items;
 }
 
-void ConfigManager::setConfig(const QString &monitor, const WallpaperConfig &cfg)
+QList<GalleryItem> ConfigManager::addToGallery(const QStringList &paths)
 {
-    m_configs[monitor] = cfg;
+    QString dest = galleryDir();
+    QList<GalleryItem> added;
+    for (const QString &src : paths) {
+        QFileInfo fi(src);
+        if (!fi.exists()) continue;
+        QString dstPath = dest + "/" + fi.fileName();
+        // Avoid duplicates — if same name exists, append counter
+        int n = 1;
+        while (QFile::exists(dstPath)) {
+            dstPath = dest + "/" + fi.baseName() + QString("_%1.").arg(n++) + fi.suffix();
+        }
+        if (QFile::copy(src, dstPath)) {
+            GalleryItem item;
+            item.path    = dstPath;
+            item.isVideo = WallpaperApplier::isVideoFile(dstPath);
+            added << item;
+        } else {
+            qWarning() << "addToGallery: copy failed" << src << "->" << dstPath;
+        }
+    }
+    return added;
+}
+
+void ConfigManager::removeFromGallery(const QString &path)
+{
+    QFile::remove(path);
 }
