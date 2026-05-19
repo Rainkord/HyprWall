@@ -5,7 +5,6 @@
 
 #include <QMainWindow>
 #include <QMap>
-#include <QTimer>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
@@ -13,24 +12,14 @@
 #include <QCheckBox>
 #include <QSlider>
 #include <QGroupBox>
-#include <QRadioButton>
-#include <QButtonGroup>
-#include <QStackedWidget>
 
 class MonitorBar;
-
-struct SlideState {
-    QStringList files;
-    int index = 0;
-};
 
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
 public:
     explicit MainWindow(QWidget *parent = nullptr);
-
-    static const int INTERVAL_SECS[4];
 
 protected:
     void paintEvent(QPaintEvent *) override;
@@ -40,7 +29,6 @@ protected:
 private slots:
     void onMonitorSelected(int index);
     void onBrowseFile();
-    void onBrowseFolder();
     void onApply();
     void onFillModeChanged(int);
     void onRotationChanged(int);
@@ -48,8 +36,6 @@ private slots:
     void onVolumeChanged(int);
     void onLanguageChanged(int);
     void onAutostartToggle();
-    void onModeChanged(int);
-    void onSlideshowTick();
 
 private:
     void buildUi();
@@ -58,14 +44,10 @@ private:
     void saveCurrentSettings();
     void switchToVideo(bool isVideo);
     void retranslateUi();
-    void updateModeStack(int idx);
     QString bindString() const;
     QString smartBrowseDir() const;
     bool isAutostartEnabled() const;
     void updateAutostartButton();
-    void startSlideshowTimer();
-    void stopSlideshowTimer();
-    void applyNextSlide();
 
     // UI widgets
     MonitorBar      *m_monitorBar      = nullptr;
@@ -73,10 +55,6 @@ private:
     QComboBox       *m_monitorCombo    = nullptr;
     QGroupBox       *m_settingsGroup   = nullptr;
     QLabel          *m_orientationLabel= nullptr;
-    QRadioButton    *m_radioStatic     = nullptr;
-    QRadioButton    *m_radioSlideshow  = nullptr;
-    QButtonGroup    *m_modeGroup       = nullptr;
-    QStackedWidget  *m_modeStack       = nullptr;
     QLabel          *m_fileLabel       = nullptr;
     QLineEdit       *m_fileEdit        = nullptr;
     QPushButton     *m_browseBtn       = nullptr;
@@ -87,11 +65,6 @@ private:
     QWidget         *m_bindRow         = nullptr;
     QLabel          *m_bindPrefixLabel = nullptr;
     QLabel          *m_bindHint        = nullptr;
-    QLabel          *m_folderLabel     = nullptr;
-    QLineEdit       *m_folderEdit      = nullptr;
-    QPushButton     *m_browseFolderBtn = nullptr;
-    QLabel          *m_intervalLabel   = nullptr;
-    QComboBox       *m_intervalCombo   = nullptr;
     QLabel          *m_fillLabel       = nullptr;
     QComboBox       *m_fillCombo       = nullptr;
     QLabel          *m_rotLabel        = nullptr;
@@ -103,12 +76,10 @@ private:
     QPushButton     *m_autostartBtn    = nullptr;
 
     // State
-    QList<MonitorInfo>       m_monitors;
-    QString                  m_currentMonitor;
-    QPoint                   m_dragPos;
-    bool                     m_isVideo = false;
-    bool                     m_isRU    = false;
-    Strings                  m_s;
-    QMap<QString,SlideState> m_slideStates;
-    QTimer                  *m_slideshowTimer = nullptr;
+    QList<MonitorInfo> m_monitors;
+    QString            m_currentMonitor;
+    QPoint             m_dragPos;
+    bool               m_isVideo = false;
+    bool               m_isRU    = false;
+    Strings            m_s;
 };

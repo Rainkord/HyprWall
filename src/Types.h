@@ -17,11 +17,6 @@ enum class WallpaperRotation {
     FlipVertical,
 };
 
-enum class WallpaperMode {
-    Static,    // single file
-    Slideshow, // folder with interval
-};
-
 struct MonitorInfo {
     QString name;
     QString description;
@@ -37,12 +32,9 @@ struct MonitorInfo {
 
 struct WallpaperConfig {
     QString           monitorName;
-    QString           filePath;       // for Static mode
-    QString           folderPath;     // for Slideshow mode
-    WallpaperMode     mode           = WallpaperMode::Static;
-    int               slideshowSecs  = 600; // seconds between changes
-    FillMode          fillMode       = FillMode::Cover;
-    WallpaperRotation rotation       = WallpaperRotation::Normal;
-    bool              audioEnabled   = false;
-    int               audioVolume    = 50;
+    QString           filePath;
+    FillMode          fillMode   = FillMode::Cover;
+    WallpaperRotation rotation   = WallpaperRotation::Normal;
+    bool              audioEnabled = false;
+    int               audioVolume  = 50;
 };
