@@ -5,7 +5,6 @@
 
 #include <QMainWindow>
 #include <QMap>
-#include <QProcess>
 
 class QLabel;
 class QLineEdit;
@@ -30,7 +29,6 @@ class MainWindow : public QMainWindow
     Q_OBJECT
 public:
     explicit MainWindow(QWidget *parent = nullptr);
-    ~MainWindow();
 
     static const int INTERVAL_SECS[4];
 
@@ -51,7 +49,7 @@ private slots:
     void onLanguageChanged(int);
     void onAutostartToggle();
     void onModeChanged(int);
-    void onSlideshowTick();   // kept for compat, no-op
+    void onSlideshowTick();
 
 private:
     void buildUi();
@@ -65,18 +63,11 @@ private:
     QString smartBrowseDir() const;
     bool isAutostartEnabled() const;
     void updateAutostartButton();
-
-    // Slideshow via external script
-    void startSlideshowScript(const QString &monitor, const QString &folder, int secs);
-    void stopSlideshowScript(const QString &monitor);
-    void stopAllSlideshowScripts();
-
-    // Compat stubs
     void startSlideshowTimer();
     void stopSlideshowTimer();
     void applyNextSlide();
 
-    // UI
+    // UI widgets
     MonitorBar      *m_monitorBar      = nullptr;
     QLabel          *m_monitorLabel    = nullptr;
     QComboBox       *m_monitorCombo    = nullptr;
@@ -112,13 +103,12 @@ private:
     QPushButton     *m_autostartBtn    = nullptr;
 
     // State
-    QList<MonitorInfo>  m_monitors;
-    QString             m_currentMonitor;
-    QPoint              m_dragPos;
-    bool                m_isVideo = false;
-    bool                m_isRU    = false;
-    Strings             m_s;
-    QMap<QString,SlideState>  m_slideStates;   // kept for compat
-    QMap<QString,QProcess*>   m_slideshowProcs;
-    QTimer             *m_slideshowTimer = nullptr; // kept for compat
+    QList<MonitorInfo>       m_monitors;
+    QString                  m_currentMonitor;
+    QPoint                   m_dragPos;
+    bool                     m_isVideo = false;
+    bool                     m_isRU    = false;
+    Strings                  m_s;
+    QMap<QString,SlideState> m_slideStates;     // unused, kept for compat
+    QTimer                  *m_slideshowTimer   = nullptr;
 };
