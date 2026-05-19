@@ -328,7 +328,7 @@ private:
 #include "MainWindow.moc"
 
 // ============================================================
-// MainWindow — slideshow via QTimer + QRandomGenerator
+// MainWindow
 // ============================================================
 bool MainWindow::isAutostartEnabled() const { return QFile::exists(autostartFilePath()); }
 
@@ -360,7 +360,15 @@ void MainWindow::onAutostartToggle()
     updateAutostartButton();
 }
 
-void MainWindow::updateModeStack(int idx) { if(m_modeStack) m_modeStack->setCurrentIndex(idx); }
+void MainWindow::updateModeStack(int idx)
+{
+    if(!m_modeStack) return;
+    m_modeStack->setCurrentIndex(idx);
+    // Resize stack to fit only the current page — no dead space
+    m_modeStack->setFixedHeight(m_modeStack->currentWidget()
+        ? m_modeStack->currentWidget()->sizeHint().height()
+        : 0);
+}
 
 void MainWindow::onModeChanged(int)
 {
@@ -386,15 +394,12 @@ void MainWindow::startSlideshowTimer()
     }
     int secs=INTERVAL_SECS[qBound(0,m_intervalCombo?m_intervalCombo->currentIndex():0,3)];
     m_slideshowTimer->start(secs*1000);
-    qDebug() << "[slideshow] timer started, interval" << secs << "s";
 }
 
 void MainWindow::stopSlideshowTimer()
 {
-    if(m_slideshowTimer && m_slideshowTimer->isActive()){
+    if(m_slideshowTimer && m_slideshowTimer->isActive())
         m_slideshowTimer->stop();
-        qDebug() << "[slideshow] timer stopped";
-    }
 }
 
 void MainWindow::applyNextSlide()
@@ -451,8 +456,7 @@ void MainWindow::buildUi()
 {
     setWindowTitle(m_s.windowTitle);
     setMinimumWidth(460);
-    setMinimumHeight(600);
-    resize(560,720);
+    resize(560, 600);
 
     QWidget *central=new QWidget(this);
     central->setObjectName("central");
@@ -469,7 +473,7 @@ void MainWindow::buildUi()
     QWidget *contents=new QWidget; contents->setObjectName("scrollContents");
     QVBoxLayout *root=new QVBoxLayout(contents);
     root->setSpacing(8); root->setContentsMargins(16,12,16,12);
-    root->setAlignment(Qt::AlignTop);  // elements always pack to top, no gaps
+    root->setAlignment(Qt::AlignTop);
 
     scroll->setWidget(contents);
     outerLayout->addWidget(scroll);
@@ -522,7 +526,9 @@ void MainWindow::buildUi()
 
     // ─ Settings group
     m_settingsGroup=new QGroupBox(m_s.groupTitle);
-    m_settingsGroup->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Preferred);
+    // Fixed size policy — group wraps its content, never stretches
+    m_settingsGroup->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Maximum);
+
     QVBoxLayout *sg=new QVBoxLayout(m_settingsGroup);
     sg->setSpacing(8); sg->setContentsMargins(10,14,10,10);
     sg->setAlignment(Qt::AlignTop);
@@ -542,18 +548,20 @@ void MainWindow::buildUi()
         m_modeGroup->addButton(m_radioSlideshow,1);
         connect(m_modeGroup,QOverload<int>::of(&QButtonGroup::idClicked),this,&MainWindow::onModeChanged);
         ml->addWidget(m_radioStatic); ml->addWidget(m_radioSlideshow); ml->addStretch();
+        modeBar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         sg->addWidget(modeBar);
     }
 
-    // Stacked pages
+    // Stacked pages — fixed height = current page height
     m_modeStack=new QStackedWidget;
-    m_modeStack->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Minimum);
+    m_modeStack->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
     // Page 0: Static
     {
         QWidget *page=new QWidget;
+        page->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         QVBoxLayout *vl=new QVBoxLayout(page);
-        vl->setContentsMargins(0,0,0,0); vl->setSpacing(6); vl->setAlignment(Qt::AlignTop);
+        vl->setContentsMargins(0,0,0,0); vl->setSpacing(6);
         m_fileLabel=makeLabel(m_s.fileLabel,"fileLabel");
         m_fileEdit=new QLineEdit;
         m_browseBtn=new QPushButton(m_s.browseBtn); m_browseBtn->setFixedWidth(BTN_W);
@@ -562,6 +570,7 @@ void MainWindow::buildUi()
         m_audioCheck=new QCheckBox(m_s.audioCheck);
         connect(m_audioCheck,&QCheckBox::toggled,this,&MainWindow::onAudioToggled);
         QWidget *audioWidget=new QWidget;
+        audioWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         QHBoxLayout *ar=new QHBoxLayout(audioWidget);
         ar->setContentsMargins(LABEL_W+8,0,0,0); ar->setSpacing(0);
         ar->addWidget(m_audioCheck); ar->addStretch();
@@ -569,6 +578,7 @@ void MainWindow::buildUi()
         m_audioCheck->setProperty("rowWidget",QVariant::fromValue(audioWidget));
         vl->addWidget(audioWidget);
         QWidget *vw=new QWidget;
+        vw->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         QHBoxLayout *volRow=new QHBoxLayout(vw);
         volRow->setContentsMargins(0,0,0,0); volRow->setSpacing(8);
         m_volumeLabelW=makeLabel(m_s.volumeLabel,"volumeLabel");
@@ -582,6 +592,7 @@ void MainWindow::buildUi()
         vw->hide(); m_volumeSlider->setProperty("volWidget",QVariant::fromValue(vw));
         vl->addWidget(vw);
         m_bindRow=new QWidget;
+        m_bindRow->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         QVBoxLayout *bl=new QVBoxLayout(m_bindRow);
         bl->setContentsMargins(LABEL_W+8,4,0,0); bl->setSpacing(3);
         m_bindPrefixLabel=new QLabel(m_s.bindPrefix); m_bindPrefixLabel->setObjectName("bindPrefix");
@@ -595,8 +606,9 @@ void MainWindow::buildUi()
     // Page 1: Slideshow
     {
         QWidget *page=new QWidget;
+        page->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         QVBoxLayout *vl=new QVBoxLayout(page);
-        vl->setContentsMargins(0,0,0,0); vl->setSpacing(6); vl->setAlignment(Qt::AlignTop);
+        vl->setContentsMargins(0,0,0,0); vl->setSpacing(6);
         m_folderLabel=makeLabel(m_s.folderLabel,"folderLabel");
         m_folderEdit=new QLineEdit;
         m_browseFolderBtn=new QPushButton(m_s.browseFolderBtn); m_browseFolderBtn->setFixedWidth(BTN_W);
@@ -624,7 +636,6 @@ void MainWindow::buildUi()
     sg->addWidget(m_applyBtn);
 
     root->addWidget(m_settingsGroup);
-    // No addStretch() — AlignTop keeps everything packed
 
     connect(m_monitorCombo,QOverload<int>::of(&QComboBox::currentIndexChanged),
             this,&MainWindow::onMonitorSelected);
@@ -759,8 +770,9 @@ void MainWindow::populateSettings(const QString &monitorName)
         m_monitorBar->setMonitorMode(monitorName,2);
     else
         m_monitorBar->setMonitorMode(monitorName,isVid?1:0,isVid?QString():cfg.filePath);
-    // Do NOT auto-restart timer on populate — only on Apply
     if(!isSlide) stopSlideshowTimer();
+    // Resize stack after populating
+    updateModeStack(isSlide?1:0);
 }
 
 void MainWindow::saveCurrentSettings()
@@ -797,6 +809,7 @@ void MainWindow::onBrowseFile()
     if(vw) vw->setVisible(isVid&&m_audioCheck->isChecked());
     if(isVid){m_bindHint->setText(bindString());m_bindRow->show();}else m_bindRow->hide();
     m_monitorBar->setMonitorMode(m_currentMonitor,isVid?1:0,isVid?QString():path);
+    updateModeStack(m_radioSlideshow->isChecked()?1:0);
 }
 
 void MainWindow::onBrowseFolder()
@@ -819,9 +832,7 @@ void MainWindow::onApply()
                 m_isRU?QString("\u041f\u0430\u043f\u043a\u0430 \u043d\u0435 \u0432\u044b\u0431\u0440\u0430\u043d\u0430"):QString("No folder selected"));
             return;
         }
-        // Apply first random image immediately
         applyNextSlide();
-        // Start repeating timer
         startSlideshowTimer();
     } else {
         stopSlideshowTimer();
@@ -836,6 +847,7 @@ void MainWindow::onAudioToggled(bool checked)
 {
     QWidget *vw=m_volumeSlider->property("volWidget").value<QWidget*>();
     if(vw) vw->setVisible(checked);
+    updateModeStack(m_radioSlideshow->isChecked()?1:0);
 }
 void MainWindow::onVolumeChanged(int val)
 { m_volumeLabel->setText(QString("%1%").arg(val)); }
