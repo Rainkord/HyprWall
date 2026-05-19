@@ -46,22 +46,19 @@ void ConfigManager::load()
 {
     QSettings s(configPath(), QSettings::IniFormat);
 
-    s.beginGroup("Slideshow");
-    m_slideshow.enabled      = s.value("enabled",      false).toBool();
-    m_slideshow.intervalSecs = s.value("intervalSecs", 300).toInt();
-    s.endGroup();
-
     for (const QString &mon : s.childGroups()) {
-        if (mon == "Slideshow") continue;
         s.beginGroup(mon);
         WallpaperConfig cfg;
-        cfg.monitorName  = mon;
-        cfg.filePath     = s.value("filePath").toString();
-        cfg.fillMode     = static_cast<FillMode>(s.value("fillMode", 0).toInt());
-        cfg.rotation     = static_cast<WallpaperRotation>(s.value("rotation", 0).toInt());
-        cfg.audioEnabled = s.value("audioEnabled", false).toBool();
-        cfg.audioVolume  = s.value("audioVolume",  50).toInt();
-        m_configs[mon]   = cfg;
+        cfg.monitorName         = mon;
+        cfg.filePath            = s.value("filePath").toString();
+        cfg.fillMode            = static_cast<FillMode>(s.value("fillMode", 0).toInt());
+        cfg.rotation            = static_cast<WallpaperRotation>(s.value("rotation", 0).toInt());
+        cfg.audioEnabled        = s.value("audioEnabled",       false).toBool();
+        cfg.audioVolume         = s.value("audioVolume",        50).toInt();
+        cfg.slideshowEnabled    = s.value("slideshowEnabled",   false).toBool();
+        cfg.slideshowInterval   = s.value("slideshowInterval",  300).toInt();
+        cfg.slideshowMode       = s.value("slideshowMode",      2).toInt();
+        m_configs[mon]          = cfg;
         s.endGroup();
     }
 }
@@ -71,19 +68,17 @@ void ConfigManager::save()
     QSettings s(configPath(), QSettings::IniFormat);
     s.clear();
 
-    s.beginGroup("Slideshow");
-    s.setValue("enabled",      m_slideshow.enabled);
-    s.setValue("intervalSecs", m_slideshow.intervalSecs);
-    s.endGroup();
-
     for (auto it = m_configs.cbegin(); it != m_configs.cend(); ++it) {
         const WallpaperConfig &cfg = it.value();
         s.beginGroup(it.key());
-        s.setValue("filePath",     cfg.filePath);
-        s.setValue("fillMode",     static_cast<int>(cfg.fillMode));
-        s.setValue("rotation",     static_cast<int>(cfg.rotation));
-        s.setValue("audioEnabled", cfg.audioEnabled);
-        s.setValue("audioVolume",  cfg.audioVolume);
+        s.setValue("filePath",           cfg.filePath);
+        s.setValue("fillMode",           static_cast<int>(cfg.fillMode));
+        s.setValue("rotation",           static_cast<int>(cfg.rotation));
+        s.setValue("audioEnabled",       cfg.audioEnabled);
+        s.setValue("audioVolume",        cfg.audioVolume);
+        s.setValue("slideshowEnabled",   cfg.slideshowEnabled);
+        s.setValue("slideshowInterval",  cfg.slideshowInterval);
+        s.setValue("slideshowMode",      cfg.slideshowMode);
         s.endGroup();
     }
 }
@@ -117,9 +112,8 @@ QList<GalleryItem> ConfigManager::addToGallery(const QStringList &paths)
         if (!fi.exists()) continue;
         QString dstPath = dest + "/" + fi.fileName();
         int n = 1;
-        while (QFile::exists(dstPath)) {
+        while (QFile::exists(dstPath))
             dstPath = dest + "/" + fi.baseName() + QString("_%1.").arg(n++) + fi.suffix();
-        }
         if (QFile::copy(src, dstPath)) {
             GalleryItem item;
             item.path    = dstPath;

@@ -30,18 +30,17 @@ struct MonitorInfo {
 struct WallpaperConfig {
     QString           monitorName;
     QString           filePath;
-    FillMode          fillMode   = FillMode::Cover;
-    WallpaperRotation rotation   = WallpaperRotation::Normal;
-    bool              audioEnabled = false;
-    int               audioVolume  = 50;
+    FillMode          fillMode      = FillMode::Cover;
+    WallpaperRotation rotation      = WallpaperRotation::Normal;
+    bool              audioEnabled  = false;
+    int               audioVolume   = 50;
+    // Per-monitor slideshow
+    bool              slideshowEnabled  = false;
+    int               slideshowInterval = 300;   // seconds
+    int               slideshowMode     = 2;     // 0=photos, 1=videos, 2=both
 };
 
 struct GalleryItem {
     QString path;     // absolute path inside gallery store
     bool    isVideo = false;
-};
-
-struct SlideshowConfig {
-    bool    enabled      = false;
-    int     intervalSecs = 300;  // 5 min default
 };

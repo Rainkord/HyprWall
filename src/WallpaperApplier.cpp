@@ -36,9 +36,8 @@ static QString mpvOptions(int fillIdx, int rotIdx, bool audio, int volume)
     QStringList opts;
     opts << "--loop";
     switch (fillIdx) {
-        case 0: opts << "--panscan=1.0";    break;
-        case 1: opts << "--keepaspect=yes"; break;
-        default: opts << "--panscan=1.0";  break;
+        case 0:  opts << "--panscan=1.0";    break;
+        default: opts << "--keepaspect=yes"; break;
     }
     switch (rotIdx) {
         case 1: opts << "--video-rotate=90";  break;
@@ -73,6 +72,7 @@ QString WallpaperApplier::prepareRotatedImage(const QString &src, WallpaperRotat
     return tmp;
 }
 
+// Write hyprpaper.conf for all image monitors
 static void writeHyprpaperConf(const QMap<QString, WallpaperConfig> &all)
 {
     QString confDir = QStandardPaths::writableLocation(QStandardPaths::ConfigLocation) + "/hypr";
@@ -95,11 +95,28 @@ static void writeHyprpaperConf(const QMap<QString, WallpaperConfig> &all)
     }
 }
 
+// Apply a single-monitor image via hyprpaper IPC (hyprpaper must be running)
+static bool applyImageIpc(const WallpaperConfig &cfg)
+{
+    QString path    = cfg.filePath;
+    QString rotPath = WallpaperApplier::prepareRotatedImage(path, cfg.rotation);
+    if (!rotPath.isEmpty()) path = rotPath;
+    QString fitMode = WallpaperApplier::fillModeToHyprpaper(cfg.fillMode);
+    QString ipcArg  = QString("%1, %2, %3").arg(cfg.monitorName, path, fitMode);
+    QProcess p;
+    p.start("hyprctl", {"hyprpaper", "wallpaper", ipcArg});
+    p.waitForFinished(3000);
+    QString out = p.readAllStandardOutput().trimmed();
+    return !out.toLower().contains("error") && !out.toLower().contains("bad");
+}
+
 bool WallpaperApplier::apply(const WallpaperConfig &cfg)
 {
     if (cfg.filePath.isEmpty()) { qWarning() << "apply: empty filePath"; return false; }
 
     if (isVideoFile(cfg.filePath)) {
+        // Kill hyprpaper IPC for this monitor first (set it to blank)
+        // then stop any existing mpvpaper and start fresh
         stopVideo(cfg.monitorName);
         QString opts = mpvOptions(
             static_cast<int>(cfg.fillMode),
@@ -111,11 +128,7 @@ bool WallpaperApplier::apply(const WallpaperConfig &cfg)
         return QProcess::startDetached("mpvpaper", args);
     }
 
-    QString path    = cfg.filePath;
-    QString rotPath = prepareRotatedImage(path, cfg.rotation);
-    if (!rotPath.isEmpty()) path = rotPath;
-    QString fitMode = fillModeToHyprpaper(cfg.fillMode);
-
+    // Image: try IPC first
     bool running = false;
     {
         QProcess chk;
@@ -125,13 +138,7 @@ bool WallpaperApplier::apply(const WallpaperConfig &cfg)
     }
 
     if (running) {
-        QString ipcArg = QString("%1, %2, %3").arg(cfg.monitorName, path, fitMode);
-        QProcess p;
-        p.start("hyprctl", {"hyprpaper", "wallpaper", ipcArg});
-        p.waitForFinished(3000);
-        QString out = p.readAllStandardOutput().trimmed();
-        if (!out.toLower().contains("error") && !out.toLower().contains("bad"))
-            return true;
+        if (applyImageIpc(cfg)) return true;
         qDebug() << "IPC failed, restarting hyprpaper...";
     }
 
@@ -145,37 +152,24 @@ bool WallpaperApplier::apply(const WallpaperConfig &cfg)
 
 void WallpaperApplier::applyAll(const QMap<QString, WallpaperConfig> &configs)
 {
-    // First pass: collect image configs to write a single hyprpaper.conf
-    // and all video configs
     bool hasImages = false;
-    for (auto it = configs.cbegin(); it != configs.cend(); ++it) {
+    for (auto it = configs.cbegin(); it != configs.cend(); ++it)
         if (!it.value().filePath.isEmpty() && !isVideoFile(it.value().filePath))
             hasImages = true;
-    }
 
     if (hasImages) {
         writeHyprpaperConf(configs);
-        // restart hyprpaper once for all image monitors
         QProcess::execute("pkill", {"-x", "hyprpaper"});
         QThread::msleep(400);
         QProcess::startDetached("hyprpaper", {});
-        QThread::msleep(600); // let hyprpaper settle
-        // Now IPC each image monitor
+        QThread::msleep(600);
         for (auto it = configs.cbegin(); it != configs.cend(); ++it) {
             const WallpaperConfig &cfg = it.value();
             if (cfg.filePath.isEmpty() || isVideoFile(cfg.filePath)) continue;
-            QString path    = cfg.filePath;
-            QString rotPath = prepareRotatedImage(path, cfg.rotation);
-            if (!rotPath.isEmpty()) path = rotPath;
-            QString fitMode = fillModeToHyprpaper(cfg.fillMode);
-            QString ipcArg  = QString("%1, %2, %3").arg(cfg.monitorName, path, fitMode);
-            QProcess p;
-            p.start("hyprctl", {"hyprpaper", "wallpaper", ipcArg});
-            p.waitForFinished(3000);
+            applyImageIpc(cfg);
         }
     }
 
-    // Video monitors
     for (auto it = configs.cbegin(); it != configs.cend(); ++it) {
         const WallpaperConfig &cfg = it.value();
         if (cfg.filePath.isEmpty() || !isVideoFile(cfg.filePath)) continue;
@@ -192,7 +186,9 @@ void WallpaperApplier::applyAll(const QMap<QString, WallpaperConfig> &configs)
 
 void WallpaperApplier::stopVideo(const QString &monitor)
 {
+    // Kill mpvpaper for this specific monitor
     QProcess::execute("pkill", {"-f", QString("mpvpaper.*%1").arg(monitor)});
+    QThread::msleep(200);
 }
 
 void WallpaperApplier::toggleAudio(const QString &monitor)
@@ -206,24 +202,42 @@ void WallpaperApplier::toggleAudio(const QString &monitor)
     apply(cfg);
 }
 
-bool WallpaperApplier::applySlideshowRandom(const QList<MonitorInfo> &monitors,
-                                             const QList<GalleryItem> &gallery)
+bool WallpaperApplier::applySlideshowTick(const QString &monitor,
+                                           const QList<GalleryItem> &gallery,
+                                           int mode)
 {
-    if (gallery.isEmpty() || monitors.isEmpty()) return false;
+    if (gallery.isEmpty()) return false;
+
+    // Filter gallery by mode: 0=photos only, 1=videos only, 2=both
+    QList<GalleryItem> filtered;
+    for (const GalleryItem &item : gallery) {
+        if (mode == 0 && item.isVideo)  continue;
+        if (mode == 1 && !item.isVideo) continue;
+        filtered << item;
+    }
+    if (filtered.isEmpty()) filtered = gallery; // fallback: use all if filter yields nothing
 
     int idx = static_cast<int>(QRandomGenerator::global()->bounded(
-                  static_cast<quint32>(gallery.size())));
-    const GalleryItem &item = gallery.at(idx);
+                  static_cast<quint32>(filtered.size())));
+    const GalleryItem &item = filtered.at(idx);
 
-    for (const MonitorInfo &mon : monitors) {
-        WallpaperConfig cfg;
-        cfg.monitorName  = mon.name;
-        cfg.filePath     = item.path;
-        cfg.fillMode     = FillMode::Cover;
-        cfg.rotation     = WallpaperRotation::Normal;
-        cfg.audioEnabled = false;   // slideshow: always silent
-        cfg.audioVolume  = 0;
-        apply(cfg);
+    WallpaperConfig cfg;
+    cfg.monitorName  = monitor;
+    cfg.filePath     = item.path;
+    cfg.fillMode     = FillMode::Cover;
+    cfg.rotation     = WallpaperRotation::Normal;
+    cfg.audioEnabled = false;  // slideshow always silent
+    cfg.audioVolume  = 0;
+
+    if (item.isVideo) {
+        // For video in slideshow: kill hyprpaper IPC doesn't matter, just stop old mpvpaper
+        stopVideo(monitor);
+        QString opts = mpvOptions(0, 0, false, 0); // cover, 0deg, no audio
+        QStringList args;
+        args << "-o" << opts << monitor << item.path;
+        qDebug() << "slideshow mpvpaper" << args;
+        return QProcess::startDetached("mpvpaper", args);
+    } else {
+        return apply(cfg);
     }
-    return true;
 }
