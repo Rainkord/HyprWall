@@ -18,6 +18,7 @@ struct Strings {
     QString windowTitle, langLabel, noMonitors, monitorLabel, groupTitle;
     QString fileLabel, browseBtn, audioCheck, volumeLabel;
     QString fillLabel, rotLabel, applyBtn, bindPrefix;
+    QString autostartLabel, autostartEnable, autostartDisable;
     QStringList imgFillModes;
     QStringList imgRotModes;
     QStringList vidFillModes;
@@ -41,10 +42,13 @@ static Strings stringsEN() {
     s.rotLabel     = "Rotation:";
     s.applyBtn     = "Apply";
     s.bindPrefix   = "Add to hyprland.conf:";
+    s.autostartLabel   = "Autostart:";
+    s.autostartEnable  = "Enable";
+    s.autostartDisable = "Disable";
     s.imgFillModes = {"Cover", "Contain"};
-    s.imgRotModes  = {"None", "90 CW", "180", "270 CW", "Flip H", "Flip V"};
-    s.vidFillModes = {"Cover (crop)", "Contain (fit)", "Fill (stretch)"};
-    s.vidRotModes  = {"None", "90 CW", "180", "270 CW", "Flip H", "Flip V"};
+    s.imgRotModes  = {"0\u00b0", "90\u00b0", "180\u00b0", "270\u00b0", "Flip H", "Flip V"};
+    s.vidFillModes = {"Cover", "Contain", "Fill"};
+    s.vidRotModes  = {"0\u00b0", "90\u00b0", "180\u00b0", "270\u00b0", "Flip H", "Flip V"};
     s.orientLandscape    = "Landscape";
     s.orientPortrait90   = "Portrait 90";
     s.orientLandscape180 = "Landscape 180";
@@ -69,10 +73,13 @@ static Strings stringsRU() {
     s.rotLabel     = "\u041f\u043e\u0432\u043e\u0440\u043e\u0442:";
     s.applyBtn     = "\u041f\u0440\u0438\u043c\u0435\u043d\u0438\u0442\u044c";
     s.bindPrefix   = "\u0414\u043e\u0431\u0430\u0432\u044c\u0442\u0435 \u0432 hyprland.conf:";
+    s.autostartLabel   = "\u0410\u0432\u0442\u043e\u0437\u0430\u043f\u0443\u0441\u043a:";
+    s.autostartEnable  = "\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u0438\u0442\u044c";
+    s.autostartDisable = "\u0421\u043d\u044f\u0442\u044c";
     s.imgFillModes = {"\u041f\u043e\u043a\u0440\u044b\u0442\u0438\u0435", "\u0412\u043f\u0438\u0441\u0430\u0442\u044c"};
-    s.imgRotModes  = {"\u041d\u0435\u0442", "90 \u043f\u043e \u0447\u0430\u0441", "180", "270 \u043f\u043e \u0447\u0430\u0441", "\u0417\u0435\u0440\u043a\u0430\u043b\u043e H", "\u0417\u0435\u0440\u043a\u0430\u043b\u043e V"};
-    s.vidFillModes = {"\u041f\u043e\u043a\u0440\u044b\u0442\u0438\u0435 (\u043e\u0431\u0440\u0435\u0437\u043a\u0430)", "\u0412\u043f\u0438\u0441\u0430\u0442\u044c (\u043f\u043e\u043b\u044e\u0441\u044b)", "\u0420\u0430\u0441\u0442\u044f\u043d\u0443\u0442\u044c"};
-    s.vidRotModes  = {"\u041d\u0435\u0442", "90 \u043f\u043e \u0447\u0430\u0441", "180", "270 \u043f\u043e \u0447\u0430\u0441", "\u0417\u0435\u0440\u043a\u0430\u043b\u043e H", "\u0417\u0435\u0440\u043a\u0430\u043b\u043e V"};
+    s.imgRotModes  = {"0\u00b0", "90\u00b0", "180\u00b0", "270\u00b0", "\u0417\u0435\u0440\u043a\u0430\u043b\u043e H", "\u0417\u0435\u0440\u043a\u0430\u043b\u043e V"};
+    s.vidFillModes = {"\u041f\u043e\u043a\u0440\u044b\u0442\u0438\u0435", "\u0412\u043f\u0438\u0441\u0430\u0442\u044c", "\u0420\u0430\u0441\u0442\u044f\u043d\u0443\u0442\u044c"};
+    s.vidRotModes  = {"0\u00b0", "90\u00b0", "180\u00b0", "270\u00b0", "\u0417\u0435\u0440\u043a\u0430\u043b\u043e H", "\u0417\u0435\u0440\u043a\u0430\u043b\u043e V"};
     s.orientLandscape    = "\u0410\u043b\u044c\u0431\u043e\u043c\u043d\u044b\u0439";
     s.orientPortrait90   = "\u041a\u043d\u0438\u0436\u043d\u044b\u0439 90";
     s.orientLandscape180 = "\u0410\u043b\u044c\u0431\u043e\u043c\u043d\u044b\u0439 180";
@@ -101,6 +108,7 @@ private slots:
     void onAudioToggled(bool);
     void onVolumeChanged(int);
     void onLanguageChanged(int);
+    void onAutostartToggle();
 
 private:
     void buildUi();
@@ -109,7 +117,9 @@ private:
     void saveCurrentSettings();
     void retranslateUi();
     void switchToVideo(bool isVideo);
+    void updateAutostartButton();
     QString bindString() const;
+    bool isAutostartEnabled() const;
 
     Strings  m_s;
     bool     m_isRU    = false;
@@ -131,14 +141,16 @@ private:
     QLabel      *m_bindHint         = nullptr;
     QWidget     *m_bindRow          = nullptr;
 
-    QLabel    *m_langLabel       = nullptr;
-    QComboBox *m_langCombo       = nullptr;
-    QLabel    *m_monitorLabel    = nullptr;
-    QLabel    *m_fileLabel       = nullptr;
-    QLabel    *m_volumeLabelW    = nullptr;
-    QLabel    *m_fillLabel       = nullptr;
-    QLabel    *m_rotLabel        = nullptr;
-    QLabel    *m_bindPrefixLabel = nullptr;
+    QLabel      *m_langLabel        = nullptr;
+    QComboBox   *m_langCombo        = nullptr;
+    QLabel      *m_monitorLabel     = nullptr;
+    QLabel      *m_fileLabel        = nullptr;
+    QLabel      *m_volumeLabelW     = nullptr;
+    QLabel      *m_fillLabel        = nullptr;
+    QLabel      *m_rotLabel         = nullptr;
+    QLabel      *m_bindPrefixLabel  = nullptr;
+    QLabel      *m_autostartLabel   = nullptr;
+    QPushButton *m_autostartBtn     = nullptr;
 
     QList<MonitorInfo> m_monitors;
     QString            m_currentMonitor;

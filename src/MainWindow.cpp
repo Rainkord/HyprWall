@@ -15,16 +15,14 @@
 #include <QMouseEvent>
 #include <QMap>
 #include <QPixmap>
+#include <QProcess>
+#include <QStandardPaths>
+#include <QFile>
+#include <QTextStream>
 #include <algorithm>
 #include <climits>
 
-// GitHub Dark theme palette:
-//   bg:        #0d1117   (canvas-default)
-//   surface:   #161b22   (canvas-subtle)
-//   border:    #30363d
-//   accent:    #58a6ff
-//   text:      #c9d1d9
-//   muted:     #8b949e
+// GitHub Dark palette
 static const char *APP_STYLE = R"(
 * {
     font-family: 'Segoe UI', 'Inter', sans-serif;
@@ -127,6 +125,30 @@ QPushButton#applyBtn:hover {
 QPushButton#applyBtn:pressed {
     background: #238636;
 }
+QPushButton#autostartEnableBtn {
+    background: rgba(35,134,54,40);
+    border: 1px solid rgba(35,134,54,120);
+    border-radius: 6px;
+    color: #3fb950;
+    font-weight: 500;
+    padding: 5px 12px;
+}
+QPushButton#autostartEnableBtn:hover {
+    background: rgba(35,134,54,80);
+    border-color: #3fb950;
+}
+QPushButton#autostartDisableBtn {
+    background: rgba(218,54,51,30);
+    border: 1px solid rgba(218,54,51,100);
+    border-radius: 6px;
+    color: #f85149;
+    font-weight: 500;
+    padding: 5px 12px;
+}
+QPushButton#autostartDisableBtn:hover {
+    background: rgba(218,54,51,70);
+    border-color: #f85149;
+}
 QCheckBox {
     spacing: 8px;
     color: #8b949e;
@@ -172,7 +194,8 @@ QLabel#bindHint {
     padding: 3px 7px;
 }
 QLabel#langLabel, QLabel#monitorLabel, QLabel#fileLabel,
-QLabel#volumeLabel, QLabel#fillLabel, QLabel#rotLabel {
+QLabel#volumeLabel, QLabel#fillLabel, QLabel#rotLabel,
+QLabel#autostartLabel {
     color: #8b949e;
     min-width: 72px;
 }
@@ -187,6 +210,28 @@ static QString orientStr(int transform, const Strings &s)
         case 3: return s.orientPortrait270;
         default: return "?";
     }
+}
+
+// ── autostart helpers ───────────────────────────────────────
+static QString autostartFilePath()
+{
+    // ~/.config/autostart/hyprwall.desktop
+    return QStandardPaths::writableLocation(QStandardPaths::ConfigLocation)
+           + "/autostart/hyprwall.desktop";
+}
+
+static QString autostartContent()
+{
+    return QString(
+        "[Desktop Entry]\n"
+        "Type=Application\n"
+        "Name=HyprWall\n"
+        "Exec=hyprwall --service\n"
+        "Hidden=false\n"
+        "NoDisplay=false\n"
+        "X-GNOME-Autostart-enabled=true\n"
+        "Comment=HyprWall wallpaper service\n"
+    );
 }
 
 // ============================================================
@@ -221,7 +266,6 @@ protected:
         p.setRenderHint(QPainter::Antialiasing);
         p.setRenderHint(QPainter::SmoothPixmapTransform);
 
-        // Card background
         p.setPen(QPen(QColor(0x30, 0x36, 0x3d, 200), 1));
         p.setBrush(QColor(13, 17, 23, 210));
         p.drawRoundedRect(rect().adjusted(0,0,-1,-1), 10, 10);
@@ -248,10 +292,9 @@ protected:
             QRect r(rx, ry, rw, rh);
             bool sel = (m.name == m_selected);
 
-            // Fill: draw wallpaper preserving its own aspect ratio (cover = crop to fit)
             if (m_pixmaps.contains(m.name)) {
+                // Cover: scale keeping aspect ratio, then centre-crop
                 const QPixmap &px = m_pixmaps[m.name];
-                // Scale to cover rect keeping source aspect ratio, then centre-crop
                 QSize scaled = px.size().scaled(r.size(), Qt::KeepAspectRatioByExpanding);
                 QPixmap scaledPx = px.scaled(scaled, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
                 int cx = (scaledPx.width()  - r.width())  / 2;
@@ -260,15 +303,16 @@ protected:
                 p.drawPixmap(r.topLeft(), scaledPx, QRect(cx, cy, r.width(), r.height()));
                 p.setClipping(false);
             } else if (m_wallpapers.contains(m.name) && WallpaperApplier::isVideoFile(m_wallpapers[m.name])) {
+                // Video: dark bg + play icon, NO stretching
                 p.fillRect(r, QColor(16, 10, 30));
                 p.setPen(QColor(139, 92, 246));
                 QFont f = p.font(); f.setPointSize(15); p.setFont(f);
                 p.drawText(r, Qt::AlignCenter, "\u25b6");
+                QFont rf = p.font(); rf.setPointSize(7); p.setFont(rf);
             } else {
                 p.fillRect(r, QColor(22, 27, 34));
             }
 
-            // Border
             if (sel) {
                 p.setPen(QPen(QColor(0x58, 0xa6, 0xff, 220), 2));
                 p.setBrush(Qt::NoBrush);
@@ -279,7 +323,6 @@ protected:
                 p.drawRect(r);
             }
 
-            // Label
             int lH = std::min(20, rh);
             QRect lr(rx, ry+rh-lH, rw, lH);
             p.fillRect(lr, QColor(0, 0, 0, 160));
@@ -313,6 +356,44 @@ private:
 // ============================================================
 // MainWindow
 // ============================================================
+bool MainWindow::isAutostartEnabled() const
+{
+    return QFile::exists(autostartFilePath());
+}
+
+void MainWindow::updateAutostartButton()
+{
+    if (!m_autostartBtn) return;
+    if (isAutostartEnabled()) {
+        m_autostartBtn->setText(m_s.autostartDisable);
+        m_autostartBtn->setObjectName("autostartDisableBtn");
+    } else {
+        m_autostartBtn->setText(m_s.autostartEnable);
+        m_autostartBtn->setObjectName("autostartEnableBtn");
+    }
+    // re-apply style for objectName change
+    m_autostartBtn->style()->unpolish(m_autostartBtn);
+    m_autostartBtn->style()->polish(m_autostartBtn);
+}
+
+void MainWindow::onAutostartToggle()
+{
+    QString path = autostartFilePath();
+    if (isAutostartEnabled()) {
+        QFile::remove(path);
+    } else {
+        // ensure ~/.config/autostart/ exists
+        QDir dir = QFileInfo(path).dir();
+        dir.mkpath(".");
+        QFile f(path);
+        if (f.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            QTextStream s(&f);
+            s << autostartContent();
+        }
+    }
+    updateAutostartButton();
+}
+
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
     setAttribute(Qt::WA_TranslucentBackground, true);
@@ -328,10 +409,9 @@ void MainWindow::paintEvent(QPaintEvent *)
 {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
-    p.setBrush(QColor(13, 17, 23, 218));  // #0d1117 ~85% opaque
+    p.setBrush(QColor(13, 17, 23, 218));
     p.setPen(QPen(QColor(0x30, 0x36, 0x3d, 180), 1));
     p.drawRoundedRect(rect().adjusted(1,1,-1,-1), 12, 12);
-    // subtle top accent line in GitHub blue
     QLinearGradient g(0, 0, width(), 0);
     g.setColorAt(0.0, QColor(0x38, 0x8b, 0xfd, 0));
     g.setColorAt(0.2, QColor(0x58, 0xa6, 0xff, 180));
@@ -372,6 +452,7 @@ void MainWindow::buildUi()
         QLabel *title = new QLabel("HyprWall");
         title->setStyleSheet("font-size:17px;font-weight:700;color:#c9d1d9;letter-spacing:1px;");
 
+        // Language
         m_langLabel = new QLabel(m_s.langLabel);
         m_langLabel->setObjectName("langLabel");
         m_langCombo = new QComboBox;
@@ -380,6 +461,15 @@ void MainWindow::buildUi()
         connect(m_langCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
                 this, &MainWindow::onLanguageChanged);
 
+        // Autostart
+        m_autostartLabel = new QLabel(m_s.autostartLabel);
+        m_autostartLabel->setObjectName("autostartLabel");
+        m_autostartBtn = new QPushButton;
+        m_autostartBtn->setFixedWidth(90);
+        updateAutostartButton();
+        connect(m_autostartBtn, &QPushButton::clicked, this, &MainWindow::onAutostartToggle);
+
+        // Close button
         QPushButton *closeBtn = new QPushButton("\u2715");
         closeBtn->setFixedSize(26, 26);
         closeBtn->setStyleSheet(
@@ -390,6 +480,9 @@ void MainWindow::buildUi()
 
         tb->addWidget(title);
         tb->addStretch();
+        tb->addWidget(m_autostartLabel);
+        tb->addWidget(m_autostartBtn);
+        tb->addSpacing(12);
         tb->addWidget(m_langLabel);
         tb->addWidget(m_langCombo);
         tb->addSpacing(8);
@@ -558,6 +651,8 @@ void MainWindow::retranslateUi()
     m_rotLabel->setText(m_s.rotLabel);
     m_applyBtn->setText(m_s.applyBtn);
     m_bindPrefixLabel->setText(m_s.bindPrefix);
+    m_autostartLabel->setText(m_s.autostartLabel);
+    updateAutostartButton();
     int fi=m_fillCombo->currentIndex(), ri=m_rotCombo->currentIndex();
     m_fillCombo->blockSignals(true); m_rotCombo->blockSignals(true);
     m_fillCombo->clear(); m_rotCombo->clear();
