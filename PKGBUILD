@@ -7,6 +7,7 @@ arch=('x86_64')
 url="https://github.com/Rainkord/HyprWall"
 license=('MIT')
 depends=('qt6-base' 'hyprpaper' 'mpvpaper' 'wayland')
+optdepends=('papirus-icon-theme: icon theme support')
 makedepends=('cmake' 'ninja' 'qt6-tools' 'wayland-protocols')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
 sha256sums=('SKIP')
