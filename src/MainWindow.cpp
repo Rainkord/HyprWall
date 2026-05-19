@@ -1,5 +1,4 @@
 #include "MainWindow.h"
-#include "MonitorBar.h"
 #include "MonitorDetector.h"
 #include "WallpaperApplier.h"
 #include "ConfigManager.h"
@@ -28,7 +27,13 @@
 #include <QSpinBox>
 #include <QFrame>
 #include <QDebug>
+#include <QPainter>
+#include <QLinearGradient>
+#include <QMouseEvent>
+#include <QMap>
+#include <QTextStream>
 #include <algorithm>
+#include <climits>
 
 // ---- Interval table (seconds) matching Strings intervalLabels ----
 const int MainWindow::INTERVAL_VALUES[] = { 60, 300, 600, 900, 1800, 3600 };
@@ -44,7 +49,7 @@ static QString orientStr(int t, const Strings &s)
     }
 }
 
-// ---- Autostart helpers (unchanged) ----
+// ---- Autostart helpers ----
 static QString autostartPath()
 {
     return QStandardPaths::writableLocation(QStandardPaths::ConfigLocation)
@@ -73,11 +78,109 @@ static void setAutostart(bool en)
     }
 }
 
+// ============================================================
+// MonitorBar — inline implementation (no separate MonitorBar.h)
+// ============================================================
+class MonitorBar : public QWidget {
+    Q_OBJECT
+public:
+    explicit MonitorBar(QWidget *p=nullptr) : QWidget(p) {
+        setMinimumHeight(150);
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        setCursor(Qt::PointingHandCursor);
+    }
+    void setMonitors(const QList<MonitorInfo> &m)
+        { m_monitors=m; m_selected=m.isEmpty()?QString():m.first().name; update(); }
+    void setSelected(const QString &n) { m_selected=n; update(); }
+    void setNoMonitorsText(const QString &t) { m_noMon=t; update(); }
+    void setMonitorMode(const QString &mon, int mode, const QString &imgPath={})
+    {
+        m_modes[mon]=mode;
+        if (mode==0 && !imgPath.isEmpty()) {
+            QPixmap px(imgPath);
+            if (!px.isNull()) m_pixmaps[mon]=px;
+        } else if (mode!=0) {
+            m_pixmaps.remove(mon);
+        }
+        update();
+    }
+signals:
+    void monitorClicked(const QString &name);
+protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        p.setRenderHint(QPainter::SmoothPixmapTransform);
+        p.setPen(QPen(QColor(0x30,0x36,0x3d,200),1));
+        p.setBrush(QColor(13,17,23,210));
+        p.drawRoundedRect(rect().adjusted(0,0,-1,-1),10,10);
+        if (m_monitors.isEmpty()) {
+            p.setPen(QColor(0x8b,0x94,0x9e));
+            p.drawText(rect(),Qt::AlignCenter,m_noMon); return;
+        }
+        int mnX=INT_MAX,mnY=INT_MAX,mxX=INT_MIN,mxY=INT_MIN;
+        for (auto &m:m_monitors){mnX=std::min(mnX,m.x);mnY=std::min(mnY,m.y);mxX=std::max(mxX,m.x+m.width);mxY=std::max(mxY,m.y+m.height);}
+        int tW=mxX-mnX,tH=mxY-mnY; if(!tW||!tH) return;
+        const int P=16; int aW=width()-2*P,aH=height()-2*P;
+        double sc=std::min((double)aW/tW,(double)aH/tH);
+        int oX=P+(aW-(int)(tW*sc))/2,oY=P+(aH-(int)(tH*sc))/2;
+        for (auto &m:m_monitors){
+            int rx=oX+(int)((m.x-mnX)*sc),ry=oY+(int)((m.y-mnY)*sc);
+            int rw=std::max(6,(int)(m.width*sc)),rh=std::max(6,(int)(m.height*sc));
+            QRect r(rx,ry,rw,rh); bool sel=(m.name==m_selected);
+            int mode=m_modes.value(m.name,-1);
+            if (mode==0 && m_pixmaps.contains(m.name)) {
+                const QPixmap &px=m_pixmaps[m.name];
+                QSize sc2=px.size().scaled(r.size(),Qt::KeepAspectRatioByExpanding);
+                QPixmap sp=px.scaled(sc2,Qt::IgnoreAspectRatio,Qt::SmoothTransformation);
+                int cx=(sp.width()-r.width())/2,cy=(sp.height()-r.height())/2;
+                p.setClipRect(r);
+                p.drawPixmap(r.topLeft(),sp,QRect(cx,cy,r.width(),r.height()));
+                p.setClipping(false);
+            } else if (mode==1) {
+                p.fillRect(r,QColor(16,10,30));
+                QFont f=p.font(); f.setPointSize(std::max(8,rh/5)); p.setFont(f);
+                p.setPen(QColor(139,92,246));
+                p.drawText(r,Qt::AlignCenter,"\u25b6");
+            } else {
+                p.fillRect(r,QColor(22,27,34));
+            }
+            if(sel){p.setPen(QPen(QColor(0x58,0xa6,0xff,220),2));p.setBrush(Qt::NoBrush);p.drawRect(r);}
+            else   {p.setPen(QPen(QColor(0x30,0x36,0x3d,180),1));p.setBrush(Qt::NoBrush);p.drawRect(r);}
+            int lH=std::min(18,rh); QRect lr(rx,ry+rh-lH,rw,lH);
+            p.fillRect(lr,QColor(0,0,0,160));
+            p.setPen(sel?QColor(0x58,0xa6,0xff):QColor(0xc9,0xd1,0xd9));
+            QFont nf=p.font(); nf.setPointSize(7); nf.setBold(sel); p.setFont(nf);
+            p.drawText(lr,Qt::AlignCenter,m.name);
+        }
+    }
+    void mousePressEvent(QMouseEvent *ev) override {
+        if(m_monitors.isEmpty()) return;
+        int mnX=INT_MAX,mnY=INT_MAX,mxX=INT_MIN,mxY=INT_MIN;
+        for(auto &m:m_monitors){mnX=std::min(mnX,m.x);mnY=std::min(mnY,m.y);mxX=std::max(mxX,m.x+m.width);mxY=std::max(mxY,m.y+m.height);}
+        int tW=mxX-mnX,tH=mxY-mnY; if(!tW||!tH) return;
+        const int P=16; int aW=width()-2*P,aH=height()-2*P;
+        double sc=std::min((double)aW/tW,(double)aH/tH);
+        int oX=P+(aW-(int)(tW*sc))/2,oY=P+(aH-(int)(tH*sc))/2;
+        for(auto &m:m_monitors){
+            int rx=oX+(int)((m.x-mnX)*sc),ry=oY+(int)((m.y-mnY)*sc);
+            int rw=std::max(6,(int)(m.width*sc)),rh=std::max(6,(int)(m.height*sc));
+            if(QRect(rx,ry,rw,rh).contains(ev->pos())){emit monitorClicked(m.name);return;}
+        }
+    }
+private:
+    QList<MonitorInfo> m_monitors;
+    QString m_selected, m_noMon{"No monitors"};
+    QMap<QString,int>     m_modes;
+    QMap<QString,QPixmap> m_pixmaps;
+};
+#include "MainWindow.moc"
+
 // ---- Gallery thumbnail helper ----
 static QWidget* makeThumb(const GalleryItem &item, MainWindow *mw,
                            const QString &removeTooltip)
 {
-    // Container
     QWidget *w = new QWidget;
     w->setFixedSize(100, 80);
     w->setCursor(Qt::PointingHandCursor);
@@ -90,7 +193,6 @@ static QWidget* makeThumb(const GalleryItem &item, MainWindow *mw,
     vl->setContentsMargins(0,0,0,0);
     vl->setSpacing(0);
 
-    // Preview
     QLabel *img = new QLabel;
     img->setFixedSize(100, 70);
     img->setAlignment(Qt::AlignCenter);
@@ -108,7 +210,6 @@ static QWidget* makeThumb(const GalleryItem &item, MainWindow *mw,
     }
     vl->addWidget(img);
 
-    // Remove button overlay in top-right
     QPushButton *del = new QPushButton("\u00d7", w);
     del->setFixedSize(18, 18);
     del->move(82, 0);
@@ -118,8 +219,6 @@ static QWidget* makeThumb(const GalleryItem &item, MainWindow *mw,
         mw->onGalleryRemove(path);
     });
 
-    // Click on thumbnail
-    // We install an event filter via a lambda workaround through child label
     img->installEventFilter(mw);
     img->setProperty("itemPath",    item.path);
     img->setProperty("itemIsVideo", item.isVideo);
@@ -128,7 +227,9 @@ static QWidget* makeThumb(const GalleryItem &item, MainWindow *mw,
     return w;
 }
 
-// ---- MainWindow ----
+// ============================================================
+// MainWindow
+// ============================================================
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -140,12 +241,10 @@ MainWindow::MainWindow(QWidget *parent)
     buildUi();
     loadMonitors();
 
-    // Restore slideshow state from config
     ConfigManager::instance().load();
     SlideshowConfig ss = ConfigManager::instance().slideshowConfig();
     m_slideshowCheck->setChecked(ss.enabled);
-    // Find matching interval index
-    int sIdx = 1; // default 5 min
+    int sIdx = 1;
     for (int i = 0; i < 6; ++i) {
         if (INTERVAL_VALUES[i] == ss.intervalSecs) { sIdx = i; break; }
     }
@@ -211,7 +310,6 @@ void MainWindow::buildUi()
     QVBoxLayout *sg = new QVBoxLayout(m_settingsGroup);
     sg->setSpacing(6);
 
-    // Orientation info
     m_orientationLabel = new QLabel;
     m_orientationLabel->setObjectName("orientLabel");
     sg->addWidget(m_orientationLabel);
@@ -325,7 +423,6 @@ void MainWindow::buildGalleryPanel(QVBoxLayout *parent)
     QVBoxLayout *vl = new QVBoxLayout(m_galleryGroup);
     vl->setSpacing(6);
 
-    // Top bar: title + add button
     {
         QHBoxLayout *bar = new QHBoxLayout;
         m_galleryAddBtn = new QPushButton(m_s.galleryAddBtn);
@@ -336,7 +433,6 @@ void MainWindow::buildGalleryPanel(QVBoxLayout *parent)
         vl->addLayout(bar);
     }
 
-    // Scroll area with grid
     QScrollArea *scroll = new QScrollArea;
     scroll->setWidgetResizable(true);
     scroll->setFixedHeight(200);
@@ -369,7 +465,7 @@ void MainWindow::buildSlideshowPanel(QVBoxLayout *parent)
     m_intervalPrefixLbl = new QLabel(m_s.slideshowIntervalLabel);
     m_intervalCombo = new QComboBox;
     m_intervalCombo->addItems(m_s.intervalLabels);
-    m_intervalCombo->setCurrentIndex(1); // 5 min default
+    m_intervalCombo->setCurrentIndex(1);
     m_intervalCombo->setEnabled(false);
     m_intervalSuffixLbl = new QLabel(m_s.slideshowMinLabel);
 
@@ -396,7 +492,6 @@ void MainWindow::buildSlideshowPanel(QVBoxLayout *parent)
 
 void MainWindow::refreshGallery()
 {
-    // Clear old grid layout
     QLayout *old = m_galleryGrid->layout();
     if (old) {
         QLayoutItem *item;
@@ -417,7 +512,6 @@ void MainWindow::refreshGallery()
     }
     m_galleryEmptyLbl->hide();
 
-    // Flow grid: 4 columns of 100px thumbnails
     QGridLayout *grid = new QGridLayout(m_galleryGrid);
     grid->setSpacing(4);
     grid->setContentsMargins(4,4,4,4);
@@ -515,7 +609,6 @@ QString MainWindow::bindString() const
 
 QString MainWindow::smartBrowseDir() const
 {
-    // Prefer ~/Pictures/wallpapers, then ~/Pictures
     QString wp = QDir::homePath() + "/Pictures/wallpapers";
     if (QDir(wp).exists()) return wp;
     QString pics = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
@@ -531,7 +624,6 @@ void MainWindow::loadMonitors()
     cm.load();
     for (const MonitorInfo &m : m_monitors) {
         WallpaperConfig cfg = cm.getConfig(m.name);
-        // Pre-fill pending from saved config
         cfg.monitorName = m.name;
         m_pending[m.name] = cfg;
         if (!cfg.filePath.isEmpty()) {
@@ -564,7 +656,6 @@ void MainWindow::populateSettings(const QString &monitorName)
             .arg(it->width).arg(it->height).arg(it->refreshRate)
             .arg(it->scale, 0, 'f', 2));
 
-    // Read from pending (not ConfigManager) so unsaved changes are preserved
     WallpaperConfig cfg;
     if (m_pending.contains(monitorName))
         cfg = m_pending[monitorName];
@@ -611,18 +702,12 @@ void MainWindow::saveCurrentToPending()
 
 void MainWindow::onApplyAll()
 {
-    // Save the currently visible monitor settings into pending first
     saveCurrentToPending();
-
-    // Write all pending configs to ConfigManager and apply all at once
     auto &cm = ConfigManager::instance();
     for (auto it = m_pending.cbegin(); it != m_pending.cend(); ++it)
         cm.setConfig(it.key(), it.value());
     cm.save();
-
     WallpaperApplier::applyAll(m_pending);
-
-    // Update monitor bar thumbnails
     for (auto it = m_pending.cbegin(); it != m_pending.cend(); ++it) {
         bool vid = WallpaperApplier::isVideoFile(it.value().filePath);
         m_monitorBar->setMonitorMode(it.key(), vid ? 1 : 0,
@@ -681,7 +766,6 @@ void MainWindow::onGalleryItemClicked(const QString &path, bool isVideo)
     if (isVideo) { m_bindHint->setText(bindString()); m_bindRow->show(); } else m_bindRow->hide();
     m_monitorBar->setMonitorMode(m_currentMonitor, isVideo ? 1 : 0,
                                  isVideo ? QString() : path);
-    // Update pending immediately for this monitor
     saveCurrentToPending();
 }
 
@@ -693,12 +777,10 @@ void MainWindow::onSlideshowToggled(bool checked)
     ss.intervalSecs = INTERVAL_VALUES[m_intervalCombo->currentIndex()];
     ConfigManager::instance().setSlideshowConfig(ss);
     ConfigManager::instance().save();
-
-    if (checked) {
+    if (checked)
         m_slideshowTimer->start(ss.intervalSecs * 1000);
-    } else {
+    else
         m_slideshowTimer->stop();
-    }
 }
 
 void MainWindow::onSlideshowTick()
