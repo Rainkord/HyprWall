@@ -28,12 +28,12 @@
 #include <QPainter>
 #include <QLinearGradient>
 #include <QMouseEvent>
+#include <QResizeEvent>
 #include <QMap>
 #include <QTextStream>
 #include <QFont>
 #include <QSizePolicy>
 #include <QPropertyAnimation>
-#include <QResizeEvent>
 #include <algorithm>
 #include <climits>
 
@@ -157,7 +157,6 @@ QPushButton {
 }
 QPushButton:hover { background: rgba(56,139,253,30); border: 1px solid #388bfd; color: #58a6ff; }
 QPushButton:pressed { background: rgba(56,139,253,20); }
-/* Gallery Add button — neutral, small, right-aligned */
 QPushButton#galleryAddBtn {
     background: rgba(33,38,45,200);
     border: 1px solid #30363d;
@@ -206,10 +205,6 @@ QWidget#galleryThumb {
     border-radius: 6px;
 }
 QWidget#galleryThumb:hover { border-color: #58a6ff; }
-QWidget#galleryThumb[ssLocked=true] {
-    opacity: 0.55;
-}
-QWidget#galleryThumb[ssLocked=true]:hover { border-color: #30363d; }
 )";
 
 static QString orientStr(int t, const Strings &s)
@@ -427,12 +422,19 @@ void MainWindow::mouseMoveEvent(QMouseEvent *e)
         move(e->globalPosition().toPoint() - m_dragPos);
 }
 
+void MainWindow::resizeEvent(QResizeEvent *ev)
+{
+    QMainWindow::resizeEvent(ev);
+    // Refresh gallery layout so column count adapts to new window width
+    if (m_galleryScroll)
+        QTimer::singleShot(0, this, &MainWindow::refreshGallery);
+}
+
 bool MainWindow::eventFilter(QObject *obj, QEvent *ev)
 {
     if (ev->type() == QEvent::MouseButtonRelease) {
         QLabel *lbl = qobject_cast<QLabel*>(obj);
         if (lbl && lbl->objectName() == "thumbImg") {
-            // Block gallery item selection when slideshow is active
             bool ssOn = m_currentMonitor.isEmpty() ? false
                         : m_ssState.value(m_currentMonitor).enabled;
             if (!ssOn) {
@@ -712,7 +714,7 @@ void MainWindow::buildGalleryPanel(QVBoxLayout *parent)
     vl->setSpacing(5);
     vl->setContentsMargins(8,14,8,8);
 
-    // Neutral Add button — small, right-aligned, no stretch
+    // Neutral Add button — small, right-aligned
     {
         QHBoxLayout *bar = new QHBoxLayout;
         bar->setContentsMargins(0,0,0,2);
@@ -748,18 +750,27 @@ void MainWindow::buildGalleryPanel(QVBoxLayout *parent)
     vl->addWidget(m_galleryScroll);
     parent->addWidget(m_galleryGroup);
 
-    // Rebuild gallery once viewport is realised
-    QTimer::singleShot(0, this, &MainWindow::refreshGallery);
+    // First render after the widget tree is fully laid out
+    QTimer::singleShot(50, this, &MainWindow::refreshGallery);
 }
 
+// ============================================================
+// Gallery refresh  — adaptive, fixed-size thumbnails
+//
+// Strategy:
+//   • Each thumbnail is FIXED_THUMB_W x FIXED_THUMB_H pixels (constant).
+//   • We pack as many columns as fit in the available viewport width.
+//   • Columns are NOT stretched — they keep the exact thumb size.
+//   • This matches the screenshot behaviour: on a narrow window 6 thumbs
+//     fit per row; on a wider window more fit automatically.
+// ============================================================
 void MainWindow::refreshGallery()
 {
     bool ssLocked = !m_currentMonitor.isEmpty()
                     && m_ssState.value(m_currentMonitor).enabled;
 
     // Clear old layout
-    QLayout *old = m_galleryGrid->layout();
-    if (old) {
+    if (QLayout *old = m_galleryGrid->layout()) {
         QLayoutItem *it;
         while ((it = old->takeAt(0)) != nullptr) {
             if (it->widget()) it->widget()->deleteLater();
@@ -782,75 +793,63 @@ void MainWindow::refreshGallery()
     }
     m_galleryEmptyLbl->hide();
 
-    // ── True adaptive grid: fill all available width ──────────
-    // Read viewport width; the viewport is the real rendering area inside QScrollArea.
-    // We subtract 2px for a potential vertical scrollbar margin.
-    const int SPACING = 4;
-    const int MARGIN  = 4;
+    // ── Fixed thumb size, adaptive column count ───────────────
+    // Thumb width is FIXED — we just pack as many as fit.
+    const int THUMB_W  = 120;   // fixed px width per thumbnail
+    const int SPACING  = 4;
+    const int MARGIN   = 4;
+    const int THUMB_H  = (THUMB_W * 9) / 16;  // 16:9 aspect → 67px
 
-    // Measure available width from the viewport (most accurate)
+    // Measure viewport width (most accurate after layout)
     int vw = 0;
     if (m_galleryScroll->viewport())
         vw = m_galleryScroll->viewport()->width();
-    if (vw < 80) vw = m_galleryScroll->width() - 2;
-    if (vw < 80) vw = width() - 48;
+    if (vw < 60) vw = m_galleryScroll->width() - 4;
+    if (vw < 60) vw = width() - 52;
 
-    // We want at least ~90px per thumb; pack as many columns as possible
-    const int MIN_THUMB_W = 70;
     int availW = vw - 2 * MARGIN;
-    // Compute maximum columns that give each thumb at least MIN_THUMB_W
-    int COLS = std::max(2, (availW + SPACING) / (MIN_THUMB_W + SPACING));
-    // Each column gets exactly equal width so they fill the full availW
-    int thumbW = (availW - (COLS - 1) * SPACING) / COLS;
-    if (thumbW < MIN_THUMB_W) { COLS = std::max(1, COLS - 1); thumbW = (availW - (COLS-1)*SPACING)/COLS; }
-    int thumbH = (thumbW * 9) / 16;  // 16:9
-    thumbH = std::max(44, thumbH);
+    // How many THUMB_W columns fit without squashing?
+    int COLS = std::max(1, (availW + SPACING) / (THUMB_W + SPACING));
 
     int rows  = (items.size() + COLS - 1) / COLS;
-    int gridH = rows * (thumbH + SPACING) + 2 * MARGIN;
+    int gridH = rows * (THUMB_H + SPACING) - SPACING + 2 * MARGIN;
     int saH   = std::min(gridH + 4, 320);
-    m_galleryScroll->setMinimumHeight(std::min(saH, thumbH + 2*MARGIN + 4));
+    m_galleryScroll->setMinimumHeight(std::min(saH, THUMB_H + 2*MARGIN + 4));
     m_galleryScroll->setMaximumHeight(saH);
 
     QGridLayout *grid = new QGridLayout(m_galleryGrid);
     grid->setSpacing(SPACING);
     grid->setContentsMargins(MARGIN, MARGIN, MARGIN, MARGIN);
     grid->setAlignment(Qt::AlignTop | Qt::AlignLeft);
-    // Equal column stretch so items always fill full width
+    // NO column stretch — each column is exactly THUMB_W wide
     for (int c = 0; c < COLS; ++c)
-        grid->setColumnStretch(c, 1);
+        grid->setColumnMinimumWidth(c, THUMB_W);
 
     int col = 0, row = 0;
     for (const GalleryItem &item : items) {
-        // Use a container that expands horizontally; height fixed via aspect ratio
+        // Outer container: fixed size so grid never compresses/stretches the thumb
         QWidget *thumb = new QWidget;
         thumb->setObjectName("galleryThumb");
         thumb->setProperty("ssLocked", ssLocked);
         thumb->setCursor(ssLocked ? Qt::ArrowCursor : Qt::PointingHandCursor);
         thumb->setToolTip(QFileInfo(item.path).fileName());
-        // Let Qt size the width from column stretch; fix the height
-        thumb->setMinimumHeight(thumbH);
-        thumb->setMaximumHeight(thumbH);
-        thumb->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        thumb->setFixedSize(THUMB_W, THUMB_H);
 
+        // Image label fills the entire thumb widget
         QLabel *img = new QLabel(thumb);
-        img->setGeometry(0, 0, thumbW, thumbH);
+        img->setGeometry(0, 0, THUMB_W, THUMB_H);
         img->setAlignment(Qt::AlignCenter);
         img->setObjectName("thumbImg");
         img->setProperty("itemPath",    item.path);
         img->setProperty("itemIsVideo", item.isVideo);
-        img->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
         img->installEventFilter(this);
-
-        // Resize img label to fill thumb on resize
-        thumb->installEventFilter(this);
 
         if (!item.isVideo) {
             QPixmap px(item.path);
             if (!px.isNull()) {
-                img->setPixmap(px.scaled(thumbW, thumbH,
+                img->setPixmap(px.scaled(THUMB_W, THUMB_H,
                     Qt::KeepAspectRatioByExpanding,
-                    Qt::SmoothTransformation).copy(0,0,thumbW,thumbH));
+                    Qt::SmoothTransformation).copy(0, 0, THUMB_W, THUMB_H));
             } else {
                 img->setText(QFileInfo(item.path).suffix().toUpper());
             }
@@ -863,14 +862,14 @@ void MainWindow::refreshGallery()
         // Dim overlay when locked
         if (ssLocked) {
             QLabel *overlay = new QLabel(thumb);
-            overlay->setGeometry(0, 0, thumbW, thumbH);
+            overlay->setGeometry(0, 0, THUMB_W, THUMB_H);
             overlay->setStyleSheet("background:rgba(13,17,23,120);");
             overlay->raise();
         }
 
         QPushButton *del = new QPushButton("\u00d7", thumb);
         del->setFixedSize(18, 18);
-        del->move(thumbW - 20, 2);
+        del->move(THUMB_W - 20, 2);
         del->setObjectName("thumbRemove");
         del->setToolTip(m_s.galleryRemoveTooltip);
         del->raise();
@@ -927,7 +926,6 @@ void MainWindow::updateSlideshowDependentWidgets(bool ssOn)
 {
     m_timerRow->setVisible(ssOn);
     m_mediaModeRow->setVisible(ssOn);
-    // Fill & rotation visible only when slideshow is off
     m_fillRow->setVisible(!ssOn);
     m_rotRow->setVisible(!ssOn);
     if (ssOn) {
@@ -935,7 +933,6 @@ void MainWindow::updateSlideshowDependentWidgets(bool ssOn)
         m_volumeRow->hide();
         m_bindRow->hide();
     }
-    // Refresh gallery to update lock/unlock state of thumbnails
     refreshGallery();
 }
 

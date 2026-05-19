@@ -40,6 +40,7 @@ protected:
     void paintEvent(QPaintEvent *) override;
     void mousePressEvent(QMouseEvent *) override;
     void mouseMoveEvent(QMouseEvent *) override;
+    void resizeEvent(QResizeEvent *ev) override;
 
 private slots:
     void onMonitorClicked(const QString &name);
@@ -82,6 +83,7 @@ private:
     bool                m_isRU             = false;
     bool                m_isVideo          = false;
     bool                m_updatingControls = false;
+    bool                m_galleryNeedsRefresh = true;
     QMap<QString, WallpaperConfig>       m_pending;
     QMap<QString, MonitorSlideshowState> m_ssState;
 
@@ -98,8 +100,8 @@ private:
     QComboBox    *m_langCombo        = nullptr;
 
     // Slideshow toggle-switch (same style as autostart)
-    QLabel       *m_slideshowLabel   = nullptr;  // "Slideshow:" text
-    ToggleSwitch *m_slideshowSwitch  = nullptr;  // animated toggle
+    QLabel       *m_slideshowLabel   = nullptr;
+    ToggleSwitch *m_slideshowSwitch  = nullptr;
 
     // Slideshow sub-controls
     QWidget      *m_timerRow          = nullptr;
