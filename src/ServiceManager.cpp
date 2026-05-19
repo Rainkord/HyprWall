@@ -1,31 +1,40 @@
 #include "ServiceManager.h"
 #include "ConfigManager.h"
 #include "WallpaperApplier.h"
+#include "MonitorDetector.h"
+#include <QTimer>
+#include <QCoreApplication>
 #include <QDebug>
 
-void ServiceManager::applyAll(const QList<MonitorInfo> &monitors)
+void ServiceManager::runDaemon()
 {
     ConfigManager &cm = ConfigManager::instance();
     cm.load();
 
-    // If slideshow is enabled — apply a random gallery item to all monitors
-    SlideshowConfig ss = cm.slideshowConfig();
-    if (ss.enabled) {
-        QList<GalleryItem> gallery = cm.loadGallery();
-        if (!gallery.isEmpty()) {
-            qDebug() << "[ServiceManager] slideshow enabled, applying random gallery item";
-            WallpaperApplier::applySlideshowRandom(monitors, gallery);
-            return;
-        }
-        qDebug() << "[ServiceManager] slideshow enabled but gallery is empty, falling back to per-monitor configs";
-    }
+    // Apply saved configs for all monitors (static wallpapers)
+    WallpaperApplier::applyAll(cm.configs());
 
-    // Normal restore: apply each monitor’s last saved wallpaper
-    for (const MonitorInfo &m : monitors) {
-        WallpaperConfig cfg = cm.getConfig(m.name);
-        if (!cfg.filePath.isEmpty()) {
-            qDebug() << "[ServiceManager] restoring" << m.name << "->" << cfg.filePath;
-            WallpaperApplier::apply(cfg);
-        }
+    // Start per-monitor slideshow timers for monitors that have it enabled
+    // We need a QCoreApplication event loop running, so schedule via QTimer::singleShot
+    const auto configs = cm.configs();
+    for (auto it = configs.cbegin(); it != configs.cend(); ++it) {
+        const WallpaperConfig &cfg = it.value();
+        if (!cfg.slideshowEnabled || cfg.slideshowInterval <= 0) continue;
+        const QString mon = it.key();
+        const int mode    = cfg.slideshowMode;
+        const int msecs   = cfg.slideshowInterval * 1000;
+        QTimer *t = new QTimer(QCoreApplication::instance());
+        t->setInterval(msecs);
+        QObject::connect(t, &QTimer::timeout, [mon, mode](){
+            QList<GalleryItem> gallery = ConfigManager::instance().loadGallery();
+            WallpaperApplier::applySlideshowTick(mon, gallery, mode);
+        });
+        // First tick immediately
+        QTimer::singleShot(0, [mon, mode](){
+            QList<GalleryItem> gallery = ConfigManager::instance().loadGallery();
+            WallpaperApplier::applySlideshowTick(mon, gallery, mode);
+        });
+        t->start();
+        qDebug() << "Slideshow started for" << mon << "every" << cfg.slideshowInterval << "sec";
     }
 }
