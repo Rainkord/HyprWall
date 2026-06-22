@@ -23,9 +23,12 @@ void MonitorBar::paintEvent(QPaintEvent*) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
     p.setRenderHint(QPainter::SmoothPixmapTransform);
-    p.setPen(QPen(QColor(0x30,0x36,0x3d,200),1));
-    p.setBrush(QColor(13,17,23,210));
-    p.drawRoundedRect(rect().adjusted(0,0,-1,-1),10,10);
+
+    // Background — slightly lighter, rounded 12px
+    p.setPen(QPen(QColor(0x21,0x26,0x2d,200),1));
+    p.setBrush(QColor(13,17,23,220));
+    p.drawRoundedRect(rect().adjusted(0,0,-1,-1),12,12);
+
     if (m_monitors.isEmpty()) {
         p.setPen(QColor(0x8b,0x94,0x9e));
         p.drawText(rect(),Qt::AlignCenter,m_noMon); return;
@@ -35,13 +38,18 @@ void MonitorBar::paintEvent(QPaintEvent*) {
         QRect r = mr.rect; bool sel=(mr.name==m_selected);
         int mode=m_modes.value(mr.name,-1);
         int rw=r.width(), rh=r.height();
+
+        // Rounded clip for monitor previews
+        QPainterPath monPath;
+        monPath.addRoundedRect(QRectF(r), 4, 4);
+        p.setClipPath(monPath);
+
         if (mode==0 && m_pixmaps.contains(mr.name)) {
             const QPixmap &px=m_pixmaps[mr.name];
             QSize sc2=px.size().scaled(r.size(),Qt::KeepAspectRatioByExpanding);
             QPixmap sp=px.scaled(sc2,Qt::IgnoreAspectRatio,Qt::SmoothTransformation);
             int cx=(sp.width()-rw)/2,cy=(sp.height()-rh)/2;
-            p.setClipRect(r); p.drawPixmap(r.topLeft(),sp,QRect(cx,cy,rw,rh));
-            p.setClipping(false);
+            p.drawPixmap(r.topLeft(),sp,QRect(cx,cy,rw,rh));
         } else if (mode==1) {
             p.fillRect(r,QColor(16,10,30));
             QFont f=p.font(); f.setPointSize(std::max(8,rh/5)); p.setFont(f);
@@ -72,12 +80,21 @@ void MonitorBar::paintEvent(QPaintEvent*) {
         } else {
             p.fillRect(r,QColor(22,27,34));
         }
-        if(sel){p.setPen(QPen(QColor(0x58,0xa6,0xff,220),2));p.setBrush(Qt::NoBrush);p.drawRect(r);}
-        else   {p.setPen(QPen(QColor(0x30,0x36,0x3d,180),1));p.setBrush(Qt::NoBrush);p.drawRect(r);}
-        int lH=std::min(18,rh); QRect lr(r.left(),r.top()+rh-lH,rw,lH);
-        p.fillRect(lr,QColor(0,0,0,160));
+        p.setClipping(false);
+
+        // Rounded border
+        QPainterPath borderPath;
+        borderPath.addRoundedRect(QRectF(r), 4, 4);
+        if(sel){p.setPen(QPen(QColor(0x58,0xa6,0xff,220),2));p.setBrush(Qt::NoBrush);p.drawPath(borderPath);}
+        else   {p.setPen(QPen(QColor(0x30,0x36,0x3d,180),1));p.setBrush(Qt::NoBrush);p.drawPath(borderPath);}
+
+        // Name label — better styling
+        int lH=std::min(20,rh); QRect lr(r.left(),r.top()+rh-lH,rw,lH);
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(0,0,0,180));
+        p.drawRect(lr);
         p.setPen(sel?QColor(0x58,0xa6,0xff):QColor(0xc9,0xd1,0xd9));
-        QFont nf=p.font(); nf.setPointSize(7); nf.setBold(sel); p.setFont(nf);
+        QFont nf=p.font(); nf.setPointSize(8); nf.setBold(sel); p.setFont(nf);
         p.drawText(lr,Qt::AlignCenter,mr.name);
     }
 }
