@@ -1,6 +1,7 @@
 #pragma once
 #include <QWidget>
 #include <QPainter>
+#include <QPainterPath>
 #include <QMouseEvent>
 #include <QFont>
 #include <QMap>

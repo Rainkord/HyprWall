@@ -166,16 +166,14 @@ void MainWindow::paintEvent(QPaintEvent *)
 {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
-    p.setBrush(QColor(13,17,23,218));
-    p.setPen(QPen(QColor(0x30,0x36,0x3d,180),1));
+    // Window body
+    p.setBrush(QColor(13,17,23,225));
+    p.setPen(QPen(QColor(0x30,0x36,0x3d,160),1));
     p.drawRoundedRect(rect().adjusted(1,1,-1,-1),12,12);
-    QLinearGradient g(0,0,width(),0);
-    g.setColorAt(0.0, QColor(0x38,0x8b,0xfd,0));
-    g.setColorAt(0.2, QColor(0x58,0xa6,0xff,180));
-    g.setColorAt(0.8, QColor(0x38,0x8b,0xfd,180));
-    g.setColorAt(1.0, QColor(0x38,0x8b,0xfd,0));
-    p.setPen(Qt::NoPen); p.setBrush(g);
-    p.drawRoundedRect(QRect(0,0,width(),2),1,1);
+    // Top accent — centered thin line, cleaner than gradient
+    p.setPen(Qt::NoPen);
+    p.setBrush(QColor(0x58,0xa6,0xff,120));
+    p.drawRoundedRect(QRect(20,0,width()-40,2),1,1);
 }
 
 void MainWindow::mousePressEvent(QMouseEvent *e)
@@ -219,8 +217,8 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *ev)
 void MainWindow::buildUi()
 {
     setWindowTitle(m_s.windowTitle);
-    setMinimumWidth(460);
-    resize(560, 640);
+    setMinimumWidth(480);
+    resize(580, 680);
 
     QWidget *central = new QWidget(this);
     central->setObjectName("central");
@@ -238,56 +236,71 @@ void MainWindow::buildUi()
     QWidget *contents = new QWidget;
     contents->setObjectName("scrollContents");
     QVBoxLayout *root = new QVBoxLayout(contents);
-    root->setSpacing(8);
-    root->setContentsMargins(16,12,16,12);
+    root->setSpacing(12);
+    root->setContentsMargins(16,14,16,16);
 
 
     scroll->setWidget(contents);
     outerLayout->addWidget(scroll);
 
     // ── Title bar ────────────────────────────────────────────
+    // Row 1: Title + close button
     {
         QHBoxLayout *tb = new QHBoxLayout;
-        tb->setSpacing(6);
+        tb->setSpacing(0);
+        tb->setContentsMargins(0, 0, 0, 0);
         QLabel *title = new QLabel("HyprWall");
-        title->setStyleSheet("font-size:17px;font-weight:700;color:#c9d1d9;letter-spacing:1px;");
+        title->setStyleSheet("font-size:18px;font-weight:700;color:#e6edf3;letter-spacing:0.5px;");
+        tb->addWidget(title); tb->addStretch();
 
+        QPushButton *closeBtn = new QPushButton("\u2715");
+        closeBtn->setFixedSize(28,28);
+        closeBtn->setStyleSheet(
+            "QPushButton{background:transparent;border:none;"
+            "border-radius:14px;color:#6e7681;font-size:13px;"
+            "min-height:28px;max-height:28px;}"
+            "QPushButton:hover{background:rgba(248,81,73,180);color:#fff;}");
+        connect(closeBtn, &QPushButton::clicked, this, &QMainWindow::close);
+        tb->addWidget(closeBtn);
+        root->addLayout(tb);
+    }
+    // Row 2: Autostart + Language (secondary controls)
+    {
+        QHBoxLayout *row = new QHBoxLayout;
+        row->setContentsMargins(0, 2, 0, 8);
+        row->setSpacing(0);
         m_autostartLabel = new QLabel(m_s.autostartLabel);
         m_autostartLabel->setStyleSheet("color:#8b949e;font-size:12px;");
         m_autostartSwitch = new ToggleSwitch(this);
         m_autostartSwitch->setChecked(autostartEnabled(), false);
         connect(m_autostartSwitch, &ToggleSwitch::toggled,
                 this, &MainWindow::onAutostartToggle);
-
+        row->addWidget(m_autostartLabel);
+        row->addSpacing(6);
+        row->addWidget(m_autostartSwitch);
+        row->addSpacing(20);
         m_langLabel = new QLabel(m_s.langLabel);
         m_langLabel->setStyleSheet("color:#8b949e;font-size:12px;");
         m_langCombo = new QComboBox;
         m_langCombo->addItems({"English", "\u0420\u0443\u0441\u0441\u043a\u0438\u0439"});
-        m_langCombo->setFixedWidth(110);
+        m_langCombo->setFixedWidth(120);
         connect(m_langCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
                 this, &MainWindow::onLanguageChanged);
-
-        QPushButton *closeBtn = new QPushButton("\u2715");
-        closeBtn->setFixedSize(26,26);
-        closeBtn->setStyleSheet(
-            "QPushButton{background:transparent;border:1px solid rgba(255,70,70,50);"
-            "border-radius:5px;color:#6e7681;font-size:11px;padding:0;"
-            "min-height:26px;max-height:26px;}"
-            "QPushButton:hover{background:rgba(218,54,51,180);border-color:transparent;color:#fff;}");
-        connect(closeBtn, &QPushButton::clicked, this, &QMainWindow::close);
-
-        tb->addWidget(title); tb->addStretch();
-        tb->addWidget(m_autostartLabel);
-        tb->addWidget(m_autostartSwitch);
-        tb->addSpacing(10);
-        tb->addWidget(m_langLabel); tb->addWidget(m_langCombo); tb->addSpacing(6);
-        tb->addWidget(closeBtn);
-        root->addLayout(tb);
+        row->addWidget(m_langLabel);
+        row->addSpacing(6);
+        row->addWidget(m_langCombo);
+        row->addStretch();
+        root->addLayout(row);
+        // Thin separator line
+        QFrame *sep = new QFrame;
+        sep->setFrameShape(QFrame::HLine);
+        sep->setStyleSheet("background:#21262d;max-height:1px;");
+        root->addWidget(sep);
     }
 
     // ── Monitor bar ──────────────────────────────────────────
     m_monitorBar = new MonitorBar(this);
-    m_monitorBar->setFixedHeight(160);
+    m_monitorBar->setFixedHeight(180);
     m_monitorBar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     m_monitorBar->setNoMonitorsText(m_s.noMonitors);
     connect(m_monitorBar, &MonitorBar::monitorClicked, this, &MainWindow::onMonitorClicked);
@@ -297,8 +310,8 @@ void MainWindow::buildUi()
     m_settingsGroup = new QGroupBox(m_s.groupTitle);
     m_settingsGroup->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Maximum);
     QVBoxLayout *sg = new QVBoxLayout(m_settingsGroup);
-    sg->setSpacing(6);
-    sg->setContentsMargins(10,14,10,10);
+    sg->setSpacing(10);
+    sg->setContentsMargins(12,16,12,12);
     sg->setAlignment(Qt::AlignTop);
 
     // 1. Monitor info
@@ -480,8 +493,8 @@ void MainWindow::buildGalleryPanel(QVBoxLayout *parent)
     m_galleryGroup = new QGroupBox(m_s.galleryTitle);
     m_galleryGroup->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     QVBoxLayout *vl = new QVBoxLayout(m_galleryGroup);
-    vl->setSpacing(5);
-    vl->setContentsMargins(8,14,8,8);
+    vl->setSpacing(8);
+    vl->setContentsMargins(10,16,10,10);
 
     {
         QHBoxLayout *bar = new QHBoxLayout;
@@ -501,7 +514,7 @@ void MainWindow::buildGalleryPanel(QVBoxLayout *parent)
     m_galleryList->setResizeMode(QListView::Adjust);
     m_galleryList->setMovement(QListView::Static);
     m_galleryList->setUniformItemSizes(false);
-    m_galleryList->setSpacing(3);
+    m_galleryList->setSpacing(4);
     m_galleryList->setWordWrap(false);
     m_galleryList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_galleryList->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
@@ -511,6 +524,8 @@ void MainWindow::buildGalleryPanel(QVBoxLayout *parent)
     m_galleryList->setSelectionMode(QAbstractItemView::NoSelection);
     m_galleryList->viewport()->installEventFilter(this);
     m_galleryList->viewport()->setObjectName("galleryViewport");
+    m_galleryList->viewport()->setMouseTracking(true);
+    m_galleryList->setMouseTracking(true);
 
     vl->addWidget(m_galleryList);
 
