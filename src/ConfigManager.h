@@ -2,7 +2,11 @@
 #include <QList>
 #include <QMap>
 #include <QString>
+#include <QMutex>
+#include <QDateTime>
 #include "Types.h"
+
+class QFileSystemWatcher;
 
 class ConfigManager {
 public:
@@ -25,6 +29,13 @@ public:
 private:
     ConfigManager() = default;
     static QString configPath();
+    bool loadFromFile(const QString &path);
 
     QMap<QString, WallpaperConfig> m_configs;
+
+    // Gallery cache (mutable — const loadGallery() writes to cache)
+    mutable QMutex m_galleryMutex;
+    mutable QList<GalleryItem> m_galleryCache;
+    mutable QDateTime m_galleryDirMtime;
+    void invalidateGalleryCache() const;
 };

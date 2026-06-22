@@ -5,8 +5,17 @@
 #include <QCoreApplication>
 #include <QDebug>
 
+static QList<QTimer*> s_slideshowTimers;
+
 void ServiceManager::applyAll(const QList<MonitorInfo> &/*monitors*/)
 {
+    // Stop any previously running slideshow timers
+    for (QTimer *t : s_slideshowTimers) {
+        t->stop();
+        t->deleteLater();
+    }
+    s_slideshowTimers.clear();
+
     ConfigManager &cm = ConfigManager::instance();
     cm.load();
 
@@ -33,6 +42,7 @@ void ServiceManager::applyAll(const QList<MonitorInfo> &/*monitors*/)
             WallpaperApplier::applySlideshowTick(mon, gallery, mode);
         });
         t->start();
+        s_slideshowTimers.append(t);
         qDebug() << "Slideshow started for" << mon << "every" << cfg.slideshowInterval << "sec";
     }
 }
