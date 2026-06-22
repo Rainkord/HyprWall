@@ -4,6 +4,7 @@
 #include <QMap>
 #include <QTimer>
 #include <QPixmap>
+#include <QPropertyAnimation>
 #include "Types.h"
 #include "Strings.h"
 
@@ -29,6 +30,8 @@ struct MonitorSlideshowState {
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
+    Q_PROPERTY(float accentPhase READ accentPhase WRITE setAccentPhase)
+    Q_PROPERTY(float windowOpacity READ windowOpacity WRITE setWindowOpacity)
 public:
     explicit MainWindow(QWidget *parent = nullptr);
     bool eventFilter(QObject *obj, QEvent *ev) override;
@@ -38,11 +41,15 @@ public:
 
     static const int INTERVAL_VALUES[6];
 
+    float accentPhase() const { return m_accentPhase; }
+    void setAccentPhase(float p) { m_accentPhase = p; update(); }
+
 protected:
     void paintEvent(QPaintEvent *) override;
     void mousePressEvent(QMouseEvent *) override;
     void mouseMoveEvent(QMouseEvent *) override;
     void resizeEvent(QResizeEvent *ev) override;
+    void showEvent(QShowEvent *ev) override;
 
 private slots:
     void onMonitorClicked(const QString &name);
@@ -72,6 +79,9 @@ private:
     void loadThumbAsync(const QString &path, int generation);
     QString bindString() const;
     QString smartBrowseDir() const;
+    void animateSectionShow(QWidget *w);
+    void animateSectionHide(QWidget *w);
+    void startEntranceAnimation();
 
     // Per-monitor slideshow
     MonitorSlideshowState &slideshowState(const QString &monitor);
@@ -103,6 +113,12 @@ private:
 
     // Gallery filesystem watcher — triggers refreshGallery on changes
     QFileSystemWatcher *m_galleryWatcher = nullptr;
+
+    // Animations
+    float m_accentPhase = 0.f;
+    QPropertyAnimation *m_accentAnim   = nullptr;
+    QPropertyAnimation *m_entranceAnim = nullptr;
+    bool m_entranceDone = false;
 
     // UI
     MonitorBar   *m_monitorBar       = nullptr;
