@@ -12,7 +12,6 @@ struct Strings {
     QString volumeLabel;
     QString fillLabel;
     QString rotLabel;
-    QString applyBtn;
     QString bindPrefix;
     QString errTitle;
     QString errBody;
@@ -55,7 +54,6 @@ inline Strings stringsEN()
     s.volumeLabel      = "Volume:";
     s.fillLabel        = "Fill:";
     s.rotLabel         = "Rotation:";
-    s.applyBtn         = "Apply";
     s.bindPrefix       = "Hyprland audio toggle bind:";
     s.errTitle         = "Error";
     s.errBody          = "Failed to apply wallpaper. Is hyprpaper/mpvpaper running?";
@@ -102,7 +100,6 @@ inline Strings stringsRU()
     s.volumeLabel      = "\u0413\u0440\u043e\u043c\u043a\u043e\u0441\u0442\u044c:";
     s.fillLabel        = "\u0417\u0430\u043f\u043e\u043b\u043d\u0435\u043d\u0438\u0435:";
     s.rotLabel         = "\u041f\u043e\u0432\u043e\u0440\u043e\u0442:";
-    s.applyBtn         = "\u041f\u0440\u0438\u043c\u0435\u043d\u0438\u0442\u044c";
     s.bindPrefix       = "\u0411\u0438\u043d\u0434 Hyprland \u0434\u043b\u044f \u0437\u0432\u0443\u043a\u0430 \u0432\u0438\u0434\u0435\u043e:";
     s.errTitle         = "\u041e\u0448\u0438\u0431\u043a\u0430";
     s.errBody          = "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0443\u0441\u0442\u0430\u043d\u043e\u0432\u0438\u0442\u044c \u043e\u0431\u043e\u0438. \u0417\u0430\u043f\u0443\u0449\u0435\u043d hyprpaper/mpvpaper?";

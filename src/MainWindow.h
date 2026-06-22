@@ -18,6 +18,7 @@ class QWidget;
 class QListWidget;
 class MonitorBar;
 class ToggleSwitch;
+class QFileSystemWatcher;
 
 struct MonitorSlideshowState {
     bool    enabled      = false;
@@ -41,6 +42,7 @@ protected:
     void paintEvent(QPaintEvent *) override;
     void mousePressEvent(QMouseEvent *) override;
     void mouseMoveEvent(QMouseEvent *) override;
+    void resizeEvent(QResizeEvent *ev) override;
 
 private slots:
     void onMonitorClicked(const QString &name);
@@ -66,6 +68,7 @@ private:
     void switchToVideo(bool isVideo);
     void updateSlideshowDependentWidgets(bool ssOn);
     void refreshGallery();
+    void recalcGalleryLayout();
     void loadThumbAsync(const QString &path, int generation);
     QString bindString() const;
     QString smartBrowseDir() const;
@@ -87,12 +90,19 @@ private:
     QMap<QString, WallpaperConfig>       m_pending;
     QMap<QString, MonitorSlideshowState> m_ssState;
 
+    // Gallery adaptive layout
+    int m_thumbW = 120;
+    int m_thumbH = 68;
+    int m_gridW  = 126;
+    int m_gridH  = 88;
+
     // Thumbnail cache: path -> scaled QPixmap (THUMB_W x THUMB_H)
-    // Populated lazily by background threads; never cleared mid-session
-    // (removed only when item is deleted from gallery)
     QMap<QString, QPixmap> m_thumbCache;
     // Incremented on every refreshGallery() so stale async results are ignored
     int m_thumbGeneration = 0;
+
+    // Gallery filesystem watcher — triggers refreshGallery on changes
+    QFileSystemWatcher *m_galleryWatcher = nullptr;
 
     // UI
     MonitorBar   *m_monitorBar       = nullptr;

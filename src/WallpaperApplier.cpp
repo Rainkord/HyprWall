@@ -206,10 +206,7 @@ void WallpaperApplier::stopVideo(const QString &monitor)
     // pkill with -f matches full cmdline; monitor name appears as argument to mpvpaper
     // Use two patterns to catch both arg orders
     QProcess::execute("pkill", {"-9", "-f",
-        QString("mpvpaper.*\\s%1(\\s|$)").arg(monitor)});
-    // Also try simple pattern fallback
-    QProcess::execute("pkill", {"-9", "-f",
-        QString("mpvpaper.*%1").arg(monitor)});
+        QString("mpvpaper.*[[:space:]]%1([[:space:]]|$)").arg(monitor)});
     QThread::msleep(300);
 }
 

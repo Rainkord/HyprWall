@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(HyprWall VERSION 0.2.0 LANGUAGES CXX)
+project(HyprWall VERSION 0.2.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -49,3 +49,4 @@ include(GNUInstallDirs)
 install(TARGETS hyprwall DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES assets/hyprwall.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
 install(FILES systemd/hyprwall.service DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/systemd/user)
+install(FILES src/hyprwall.qss DESTINATION ${CMAKE_INSTALL_DATADIR}/hyprwall)
