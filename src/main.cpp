@@ -12,7 +12,7 @@ int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
     app.setApplicationName("HyprWall");
-    app.setApplicationVersion("0.4.0");
+    app.setApplicationVersion("0.5.0");
     app.setOrganizationName("Rainkord");
 
     QCommandLineParser parser;

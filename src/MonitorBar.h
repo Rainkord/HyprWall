@@ -6,16 +6,27 @@
 #include <QFont>
 #include <QMap>
 #include <QPixmap>
+#include <QPropertyAnimation>
 #include "Types.h"
 
 class MonitorBar : public QWidget {
     Q_OBJECT
+    Q_PROPERTY(float glowPhase READ glowPhase WRITE setGlowPhase)
 public:
     explicit MonitorBar(QWidget *p=nullptr) : QWidget(p) {
         setMinimumHeight(150);
         setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         setCursor(Qt::PointingHandCursor);
+        m_glowAnim = new QPropertyAnimation(this, "glowPhase", this);
+        m_glowAnim->setDuration(1500);
+        m_glowAnim->setStartValue(0.f);
+        m_glowAnim->setEndValue(6.2832f);
+        m_glowAnim->setLoopCount(-1);
+        m_glowAnim->setEasingCurve(QEasingCurve::Linear);
+        m_glowAnim->start();
     }
+    float glowPhase() const { return m_glowPhase; }
+    void setGlowPhase(float v) { m_glowPhase = v; update(); }
     void setMonitors(const QList<MonitorInfo> &m)
         { m_monitors=m; m_selected=m.isEmpty()?QString():m.first().name; update(); }
     void setSelected(const QString &n) { m_selected=n; update(); }
@@ -48,4 +59,6 @@ private:
     QString m_selected, m_noMon{"No monitors"};
     QMap<QString,int>     m_modes;
     QMap<QString,QPixmap> m_pixmaps;
+    float m_glowPhase = 0.f;
+    QPropertyAnimation *m_glowAnim = nullptr;
 };

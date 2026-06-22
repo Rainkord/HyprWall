@@ -44,6 +44,7 @@
 #include <QFileSystemWatcher>
 #include <algorithm>
 #include <climits>
+#include <cmath>
 
 const int MainWindow::INTERVAL_VALUES[] = { 60, 300, 600, 900, 1800, 3600 };
 
@@ -124,6 +125,7 @@ MainWindow::MainWindow(QWidget *parent)
     ConfigManager::instance().load();
     buildUi();
     loadMonitors();
+    startEntranceAnimation();
 }
 
 MonitorSlideshowState &MainWindow::slideshowState(const QString &monitor)
@@ -162,18 +164,115 @@ void MainWindow::tickMonitor(const QString &monitor)
     WallpaperApplier::applySlideshowTick(monitor, gallery, mode);
 }
 
+// ============================================================
+// Entrance animation — fade-in + pulsing accent line
+// ============================================================
+void MainWindow::startEntranceAnimation()
+{
+    // Opacity entrance animation
+    setWindowOpacity(0.0);
+    m_entranceAnim = new QPropertyAnimation(this, "windowOpacity", this);
+    m_entranceAnim->setDuration(400);
+    m_entranceAnim->setStartValue(0.0);
+    m_entranceAnim->setEndValue(1.0);
+    m_entranceAnim->setEasingCurve(QEasingCurve::OutCubic);
+    m_entranceAnim->start(QAbstractAnimation::DeleteWhenStopped);
+    connect(m_entranceAnim, &QPropertyAnimation::finished, this, [this]{ m_entranceDone = true; });
+
+    // Pulsing accent line animation
+    m_accentPhase = 0.f;
+    m_accentAnim = new QPropertyAnimation(this, "accentPhase", this);
+    m_accentAnim->setDuration(2000);
+    m_accentAnim->setStartValue(0.f);
+    m_accentAnim->setEndValue(6.2832f); // 2*PI
+    m_accentAnim->setLoopCount(-1); // infinite
+    m_accentAnim->setEasingCurve(QEasingCurve::Linear);
+    m_accentAnim->start();
+}
+
+void MainWindow::animateSectionShow(QWidget *w)
+{
+    if (!w) return;
+    w->show();
+    w->setMaximumHeight(0);
+    w->setMinimumHeight(0);
+    QPropertyAnimation *anim = new QPropertyAnimation(w, "maximumHeight", this);
+    anim->setDuration(250);
+    anim->setStartValue(0);
+    anim->setEndValue(w->sizeHint().height() + 20);
+    anim->setEasingCurve(QEasingCurve::OutCubic);
+    connect(anim, &QPropertyAnimation::finished, this, [w, anim]{
+        w->setMaximumHeight(16777215);
+        anim->deleteLater();
+    });
+    anim->start(QAbstractAnimation::DeleteWhenStopped);
+}
+
+void MainWindow::animateSectionHide(QWidget *w)
+{
+    if (!w || w->isHidden()) return;
+    QPropertyAnimation *anim = new QPropertyAnimation(w, "maximumHeight", this);
+    anim->setDuration(200);
+    anim->setStartValue(w->height());
+    anim->setEndValue(0);
+    anim->setEasingCurve(QEasingCurve::InCubic);
+    connect(anim, &QPropertyAnimation::finished, this, [w, anim]{
+        w->hide();
+        w->setMaximumHeight(16777215);
+        anim->deleteLater();
+    });
+    anim->start(QAbstractAnimation::DeleteWhenStopped);
+}
+
+void MainWindow::showEvent(QShowEvent *ev)
+{
+    QMainWindow::showEvent(ev);
+    if (!m_entranceDone) startEntranceAnimation();
+}
+
 void MainWindow::paintEvent(QPaintEvent *)
 {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
-    // Window body
-    p.setBrush(QColor(13,17,23,225));
-    p.setPen(QPen(QColor(0x30,0x36,0x3d,160),1));
-    p.drawRoundedRect(rect().adjusted(1,1,-1,-1),12,12);
-    // Top accent — centered thin line, cleaner than gradient
+
+    // Window body — frosted glass
     p.setPen(Qt::NoPen);
-    p.setBrush(QColor(0x58,0xa6,0xff,120));
-    p.drawRoundedRect(QRect(20,0,width()-40,2),1,1);
+    p.setBrush(QColor(13, 17, 23, 220));
+    p.drawRoundedRect(rect().adjusted(1,1,-1,-1), 14, 14);
+
+    // Subtle inner border glow
+    QLinearGradient borderGrad(0, 0, 0, height());
+    borderGrad.setColorAt(0.0, QColor(56, 139, 253, 25));
+    borderGrad.setColorAt(0.3, QColor(48, 54, 61, 15));
+    borderGrad.setColorAt(1.0, QColor(48, 54, 61, 8));
+    p.setPen(QPen(QColor(48, 54, 61, 40), 1));
+    p.setBrush(Qt::NoBrush);
+    p.drawRoundedRect(rect().adjusted(1,1,-1,-1), 14, 14);
+
+    // Animated accent line — pulsing glow
+    float t = std::sin(m_accentPhase) * 0.5f + 0.5f; // 0..1
+    int alpha = (int)(60 + t * 80); // 60..140
+    int lineW = (int)(width() * (0.3f + t * 0.15f)); // 30%..45% width
+    int x = (width() - lineW) / 2;
+
+    // Glow layer (wider, dimmer)
+    QRadialGradient glowGrad(x + lineW/2, 1, lineW/2);
+    glowGrad.setColorAt(0.0, QColor(88, 166, 255, alpha/3));
+    glowGrad.setColorAt(1.0, QColor(88, 166, 255, 0));
+    p.setBrush(glowGrad);
+    p.setPen(Qt::NoPen);
+    p.drawEllipse(QRect(x - 10, -8, lineW + 20, 20));
+
+    // Core line
+    QLinearGradient lineGrad(x, 0, x + lineW, 0);
+    float center = t;
+    lineGrad.setColorAt(0.0, QColor(56, 139, 253, 0));
+    lineGrad.setColorAt(qMax(0.0, center - 0.3), QColor(88, 166, 255, alpha));
+    lineGrad.setColorAt(center, QColor(121, 192, 255, alpha + 30));
+    lineGrad.setColorAt(qMin(1.0, center + 0.3), QColor(88, 166, 255, alpha));
+    lineGrad.setColorAt(1.0, QColor(56, 139, 253, 0));
+    p.setBrush(lineGrad);
+    p.drawRoundedRect(QRect(x, 0, lineW, 2), 1, 1);
 }
 
 void MainWindow::mousePressEvent(QMouseEvent *e)
@@ -906,10 +1005,19 @@ void MainWindow::populateSettings(const QString &monitorName)
 
     updateSlideshowDependentWidgets(ss.enabled);
     if (!ss.enabled) {
-        m_audioRow->setVisible(isVid);
-        m_volumeRow->setVisible(isVid && cfg.audioEnabled);
-        if (isVid) { m_bindHint->setText(bindString()); m_bindRow->show(); }
-        else m_bindRow->hide();
+        m_updatingControls = true; // prevent signal loops during animation setup
+        if (isVid) {
+            animateSectionShow(m_audioRow);
+            if (cfg.audioEnabled) animateSectionShow(m_volumeRow);
+            else { m_volumeRow->hide(); }
+            m_bindHint->setText(bindString());
+            animateSectionShow(m_bindRow);
+        } else {
+            m_audioRow->hide();
+            m_volumeRow->hide();
+            m_bindRow->hide();
+        }
+        m_updatingControls = false;
     }
 
     // Show correct indicator: slideshow=2, video=1, image=0
@@ -1014,10 +1122,19 @@ void MainWindow::onGalleryItemClicked(const QString &path, bool isVideo)
     m_pending[m_currentMonitor].filePath = path;
     switchToVideo(isVideo);
     bool ssOn = m_ssState.value(m_currentMonitor).enabled;
-    m_audioRow->setVisible(isVideo && !ssOn);
-    m_volumeRow->setVisible(isVideo && m_audioCheck->isChecked() && !ssOn);
-    if (isVideo && !ssOn) { m_bindHint->setText(bindString()); m_bindRow->show(); }
-    else m_bindRow->hide();
+    if (!ssOn) {
+        if (isVideo) {
+            animateSectionShow(m_audioRow);
+            if (m_audioCheck->isChecked()) animateSectionShow(m_volumeRow);
+            else m_volumeRow->hide();
+            m_bindHint->setText(bindString());
+            animateSectionShow(m_bindRow);
+        } else {
+            animateSectionHide(m_audioRow);
+            animateSectionHide(m_volumeRow);
+            animateSectionHide(m_bindRow);
+        }
+    }
     // When slideshow is on, item clicks don't change the bar indicator
     if (!ssOn)
         m_monitorBar->setMonitorMode(m_currentMonitor, isVideo?1:0,
@@ -1038,10 +1155,16 @@ void MainWindow::onSlideshowToggled(bool checked)
     if (!checked) {
         bool isVid = m_pending.contains(m_currentMonitor) &&
                      WallpaperApplier::isVideoFile(m_pending[m_currentMonitor].filePath);
-        m_audioRow->setVisible(isVid);
-        m_volumeRow->setVisible(isVid && m_audioCheck->isChecked());
-        if (isVid) { m_bindHint->setText(bindString()); m_bindRow->show(); }
-        else m_bindRow->hide();
+        if (isVid) {
+            animateSectionShow(m_audioRow);
+            if (m_audioCheck->isChecked()) animateSectionShow(m_volumeRow);
+            m_bindHint->setText(bindString());
+            animateSectionShow(m_bindRow);
+        } else {
+            animateSectionHide(m_audioRow);
+            animateSectionHide(m_volumeRow);
+            animateSectionHide(m_bindRow);
+        }
     }
 }
 
@@ -1057,7 +1180,8 @@ void MainWindow::onRotationChanged(int)
 
 void MainWindow::onAudioToggled(bool checked)
 {
-    m_volumeRow->setVisible(checked);
+    if (checked) animateSectionShow(m_volumeRow);
+    else animateSectionHide(m_volumeRow);
     applyAndSaveCurrent();
 }
 

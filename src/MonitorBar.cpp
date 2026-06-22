@@ -1,6 +1,7 @@
 #include "MonitorBar.h"
 #include <climits>
 #include <algorithm>
+#include <cmath>
 
 QList<MonitorBar::MonitorRect> MonitorBar::computeMonitorRects() const {
     QList<MonitorRect> result;
@@ -82,10 +83,23 @@ void MonitorBar::paintEvent(QPaintEvent*) {
         }
         p.setClipping(false);
 
-        // Rounded border
+        // Rounded border — pulsing glow on selected
         QPainterPath borderPath;
         borderPath.addRoundedRect(QRectF(r), 4, 4);
-        if(sel){p.setPen(QPen(QColor(0x58,0xa6,0xff,220),2));p.setBrush(Qt::NoBrush);p.drawPath(borderPath);}
+        if(sel){
+            float t = std::sin(m_glowPhase) * 0.5f + 0.5f;
+            int alpha = (int)(140 + t * 80);
+            p.setPen(QPen(QColor(0x58,0xa6,0xff, alpha), 2));
+            p.setBrush(Qt::NoBrush);
+            p.drawPath(borderPath);
+            // Outer glow
+            QRadialGradient glow(r.center(), std::max(r.width(), r.height()) * 0.7);
+            glow.setColorAt(0.0, QColor(0x58,0xa6,0xff, (int)(30 * t)));
+            glow.setColorAt(1.0, QColor(0x58,0xa6,0xff, 0));
+            p.setPen(Qt::NoPen);
+            p.setBrush(glow);
+            p.drawRoundedRect(r.adjusted(-4,-4,4,4), 6, 6);
+        }
         else   {p.setPen(QPen(QColor(0x30,0x36,0x3d,180),1));p.setBrush(Qt::NoBrush);p.drawPath(borderPath);}
 
         // Name label — better styling
