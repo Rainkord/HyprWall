@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(HyprWall VERSION 0.2.1 LANGUAGES CXX)
+project(HyprWall VERSION 0.3.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -19,6 +19,8 @@ set(SOURCES
     src/WallpaperApplier.cpp
     src/ConfigManager.cpp
     src/ServiceManager.cpp
+    src/MonitorBar.cpp
+    src/GalleryDelegate.cpp
 )
 
 set(HEADERS
@@ -29,6 +31,10 @@ set(HEADERS
     src/ServiceManager.h
     src/Types.h
     src/Strings.h
+    src/ToggleSwitch.h
+    src/MonitorBar.h
+    src/GalleryDelegate.h
+    src/GalleryConstants.h
 )
 
 add_executable(hyprwall ${SOURCES} ${HEADERS})
