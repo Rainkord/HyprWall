@@ -132,6 +132,15 @@ MainWindow::MainWindow(QWidget *parent)
 
     buildUi();
 
+    // Resize debounce timer — prevents full gallery rebuild on every pixel of resize
+    m_resizeDebounceTimer = new QTimer(this);
+    m_resizeDebounceTimer->setSingleShot(true);
+    m_resizeDebounceTimer->setInterval(150);
+    connect(m_resizeDebounceTimer, &QTimer::timeout, this, [this]() {
+        recalcGalleryLayout();
+        refreshGallery();
+    });
+
     loadMonitors();
     startEntranceAnimation();
 }
@@ -239,10 +248,6 @@ void MainWindow::paintEvent(QPaintEvent *)
     p.drawRoundedRect(rect().adjusted(1,1,-1,-1), 14, 14);
 
     // Subtle inner border glow
-    QLinearGradient borderGrad(0, 0, 0, height());
-    borderGrad.setColorAt(0.0, QColor(56, 139, 253, 25));
-    borderGrad.setColorAt(0.3, QColor(48, 54, 61, 15));
-    borderGrad.setColorAt(1.0, QColor(48, 54, 61, 8));
     p.setPen(QPen(QColor(48, 54, 61, 40), 1));
     p.setBrush(Qt::NoBrush);
     p.drawRoundedRect(rect().adjusted(1,1,-1,-1), 14, 14);
@@ -1402,11 +1407,11 @@ void MainWindow::onSameWallpaperToggled(bool checked)
         // Sync mode: switch to desktop tab, apply same wallpaper
         switchTab(0);
         syncSameWallpaper();
-    m_settingsGroup->setTitle(m_lockScreenMode ? m_s.lockScreenGroupTitle : m_s.groupTitle);
     } else {
         // Separate mode: restore active tab
         switchTab(m_activeTab);
     }
+    m_settingsGroup->setTitle(m_lockScreenMode ? m_s.lockScreenGroupTitle : m_s.groupTitle);
 }
 
 void MainWindow::syncSameWallpaper()
@@ -1442,8 +1447,7 @@ void MainWindow::syncSameWallpaper()
 void MainWindow::resizeEvent(QResizeEvent *ev)
 {
     QMainWindow::resizeEvent(ev);
-    recalcGalleryLayout();
-    refreshGallery();
+    m_resizeDebounceTimer->start();
 }
 
 void MainWindow::closeEvent(QCloseEvent *ev)

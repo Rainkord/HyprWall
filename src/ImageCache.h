@@ -6,8 +6,18 @@
 #include <QImageWriter>
 #include <QStandardPaths>
 #include <QDebug>
+#include <QMutex>
+#include <QMutexLocker>
+#include <QCryptographicHash>
+#include <QTextStream>
 
 namespace ImageCache {
+
+inline QMutex &cacheMutex()
+{
+    static QMutex m;
+    return m;
+}
 
 inline QString compressedDir()
 {
@@ -17,10 +27,18 @@ inline QString compressedDir()
     return dir;
 }
 
+// MD5-based filename to avoid collisions between files with same basename
 inline QString compressedPath(const QString &originalPath)
 {
-    QFileInfo fi(originalPath);
-    return compressedDir() + "/" + fi.completeBaseName() + ".jpg";
+    QByteArray hash = QCryptographicHash::hash(
+        originalPath.toUtf8(), QCryptographicHash::Md5).toHex(8);
+    return compressedDir() + "/" + hash + ".jpg";
+}
+
+// Sidecar file stores original path for prune() — O(n) instead of O(n*m)
+inline QString metaPath(const QString &originalPath)
+{
+    return compressedPath(originalPath) + ".meta";
 }
 
 inline bool isStale(const QString &originalPath)
@@ -43,6 +61,7 @@ inline QString ensureCompressed(const QString &originalPath)
     static const QStringList imgExts = {"jpg","jpeg","png","bmp","webp","tiff","gif"};
     if (!imgExts.contains(ext)) return originalPath;
 
+    QMutexLocker lock(&cacheMutex());
     QString cp = compressedPath(originalPath);
     if (!isStale(originalPath)) return cp;
 
@@ -72,6 +91,11 @@ inline QString ensureCompressed(const QString &originalPath)
     QFile::remove(cp);
     QFile::rename(tmpPath, cp);
 
+    // Write sidecar metadata (original path) for prune
+    QFile metaFile(metaPath(originalPath));
+    if (metaFile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
+        metaFile.write(originalPath.toUtf8());
+
     qDebug() << "ImageCache: created" << QFileInfo(cp).fileName()
              << "(" << QFileInfo(cp).size() / 1024 << "KB) from"
              << QFileInfo(originalPath).fileName()
@@ -84,6 +108,7 @@ inline QString ensureCompressed(const QString &originalPath)
 inline QString getCompressedOrOriginal(const QString &originalPath)
 {
     if (originalPath.isEmpty()) return originalPath;
+    QMutexLocker lock(&cacheMutex());
     QString cp = compressedPath(originalPath);
     if (QFileInfo::exists(cp)) return cp;
     return originalPath;
@@ -93,27 +118,29 @@ inline QString getCompressedOrOriginal(const QString &originalPath)
 inline void removeCompressed(const QString &originalPath)
 {
     if (originalPath.isEmpty()) return;
+    QMutexLocker lock(&cacheMutex());
     QFile::remove(compressedPath(originalPath));
+    QFile::remove(metaPath(originalPath));
 }
 
-// Prune compressed copies whose originals no longer exist in gallery
+// Prune compressed copies whose originals no longer exist — O(n) via sidecar .meta files
 inline void prune(const QSet<QString> &validOriginalPaths)
 {
+    QMutexLocker lock(&cacheMutex());
     QDir dir(compressedDir());
-    QStringList files = dir.entryList(QStringList() << "*.jpg", QDir::Files);
-    for (const QString &f : files) {
-        // Reconstruct original path from compressed filename
-        // We need to check if ANY valid path has this base name
-        QString baseName = QFileInfo(f).completeBaseName();
-        bool found = false;
-        for (const QString &orig : validOriginalPaths) {
-            if (QFileInfo(orig).completeBaseName() == baseName) {
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            QFile::remove(dir.filePath(f));
+    QStringList metas = dir.entryList(QStringList() << "*.meta", QDir::Files);
+
+    for (const QString &m : metas) {
+        QFile f(dir.filePath(m));
+        if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) continue;
+        QString origPath = QString::fromUtf8(f.readAll()).trimmed();
+        f.close();
+
+        if (!validOriginalPaths.contains(origPath)) {
+            // Original removed from gallery — delete compressed + meta
+            QString jpg = dir.filePath(QFileInfo(m).completeBaseName());
+            QFile::remove(jpg);
+            QFile::remove(dir.filePath(m));
         }
     }
 }

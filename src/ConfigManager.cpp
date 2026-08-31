@@ -243,8 +243,9 @@ QList<GalleryItem> ConfigManager::addToGallery(const QStringList &paths)
 void ConfigManager::removeFromGallery(const QString &path)
 {
     QFileInfo fi(path);
-    QString gallery = QFileInfo(galleryDir()).absoluteFilePath();
-    if (!fi.absoluteFilePath().startsWith(gallery)) {
+    QString gallery = QDir(QFileInfo(galleryDir()).absoluteFilePath()).absolutePath();
+    QString filePath = fi.absoluteFilePath();
+    if (!filePath.startsWith(gallery + "/") && filePath != gallery) {
         qWarning() << "removeFromGallery: refused, path outside gallery:" << path;
         return;
     }
@@ -320,7 +321,9 @@ void ConfigManager::writeHyprlockConf()
     QSaveFile writeFile(hyprlockPath);
     if (!writeFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) return;
     writeFile.write(content.toUtf8());
-    writeFile.commit();
+    if (!writeFile.commit()) {
+        qWarning() << "ConfigManager::writeHyprlockConf: commit failed" << writeFile.errorString();
+    }
 }
 
 QVariant ConfigManager::getSetting(const QString &key, const QVariant &def) const

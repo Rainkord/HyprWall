@@ -20,7 +20,6 @@ set(SOURCES
     src/ConfigManager.cpp
     src/ServiceManager.cpp
     src/MonitorBar.cpp
-    src/GalleryDelegate.cpp
 )
 
 set(HEADERS
@@ -35,6 +34,8 @@ set(HEADERS
     src/MonitorBar.h
     src/GalleryDelegate.h
     src/GalleryConstants.h
+    src/ThumbCache.h
+    src/ImageCache.h
 )
 
 add_executable(hyprwall ${SOURCES} ${HEADERS})

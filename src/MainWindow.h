@@ -31,7 +31,6 @@ struct MonitorSlideshowState {
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
-    Q_PROPERTY(float windowOpacity READ windowOpacity WRITE setWindowOpacity)
 public:
     explicit MainWindow(QWidget *parent = nullptr);
     bool eventFilter(QObject *obj, QEvent *ev) override;
@@ -107,6 +106,9 @@ private:
     int m_thumbH = 68;
     int m_gridW  = 126;
     int m_gridH  = 88;
+
+    // Debounce timer for resize-triggered gallery refresh
+    QTimer *m_resizeDebounceTimer = nullptr;
 
     // Thumbnail cache: path -> scaled QPixmap (THUMB_W x THUMB_H)
     QMap<QString, QPixmap> m_thumbCache;

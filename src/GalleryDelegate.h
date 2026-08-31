@@ -3,7 +3,6 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QFont>
-#include <cmath>
 #include "GalleryConstants.h"
 
 class GalleryDelegate : public QStyledItemDelegate {
@@ -64,19 +63,26 @@ public:
 
         // Image area
         QRect imgR = r.adjusted(1, 1, -1, -(gridH - thumbH - 1));
-        QPixmap px = idx.data(Qt::DecorationRole).value<QIcon>().pixmap(thumbW, thumbH);
-        if (!px.isNull()) {
-            QPixmap scaled = px.scaled(imgR.size(),
-                Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
-            int cx = (scaled.width()  - imgR.width())  / 2;
-            int cy = (scaled.height() - imgR.height()) / 2;
+        QIcon icon = idx.data(Qt::DecorationRole).value<QIcon>();
+        if (!icon.isNull()) {
+            QPixmap px = icon.pixmap(imgR.size());
+            if (!px.isNull()) {
+                // Scale to fill cell (crop excess), centered
+                QPixmap scaled = px.scaled(imgR.size(),
+                    Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+                int cx = (scaled.width()  - imgR.width())  / 2;
+                int cy = (scaled.height() - imgR.height()) / 2;
 
-            // Rounded clip for image
-            QPainterPath imgPath;
-            imgPath.addRoundedRect(QRectF(imgR), 7, 7);
-            p->setClipPath(imgPath);
-            p->drawPixmap(imgR.topLeft(), scaled, QRect(cx, cy, imgR.width(), imgR.height()));
-            p->setClipping(false);
+                QPainterPath imgPath;
+                imgPath.addRoundedRect(QRectF(imgR), 7, 7);
+                p->setClipPath(imgPath);
+                p->drawPixmap(imgR.topLeft(), scaled, QRect(cx, cy, imgR.width(), imgR.height()));
+                p->setClipping(false);
+            } else {
+                p->fillRect(imgR, QColor(30, 35, 42));
+                p->setPen(QColor(0x48,0x4f,0x58));
+                p->drawText(imgR, Qt::AlignCenter, "...");
+            }
         } else {
             p->fillRect(imgR, QColor(30, 35, 42));
             p->setPen(QColor(0x48,0x4f,0x58));
