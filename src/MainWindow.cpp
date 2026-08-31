@@ -618,7 +618,7 @@ void MainWindow::buildGalleryPanel(QVBoxLayout *parent)
     m_galleryGroup->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     QVBoxLayout *vl = new QVBoxLayout(m_galleryGroup);
     vl->setSpacing(8);
-    vl->setContentsMargins(10,16,10,10);
+    vl->setContentsMargins(4,10,10,10);
 
     {
         QHBoxLayout *bar = new QHBoxLayout;
