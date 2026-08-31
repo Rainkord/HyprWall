@@ -326,21 +326,15 @@ void MainWindow::buildUi()
         QHBoxLayout *tb = new QHBoxLayout;
         tb->setSpacing(0);
         tb->setContentsMargins(0, 0, 0, 0);
-        QLabel *title = new QLabel("HyprWall");
-        title->setStyleSheet("font-size:18px;font-weight:700;color:#e6edf3;letter-spacing:0.5px;");
+        QPushButton *title = new QPushButton("HyprWall");
+        title->setFlat(true);
+        title->setCursor(Qt::PointingHandCursor);
+        title->setStyleSheet(
+            "QPushButton{background:transparent;border:none;color:#e6edf3;"
+            "font-size:18px;font-weight:700;letter-spacing:0.5px;text-align:left;}"
+            "QPushButton:hover{color:#58a6ff;}");
+        connect(title, &QPushButton::clicked, this, &MainWindow::showAboutDialog);
         tb->addWidget(title); tb->addStretch();
-
-        QPushButton *infoBtn = new QPushButton("\u2139");
-        infoBtn->setFixedSize(28,28);
-        infoBtn->setToolTip(m_isRU ? "О приложении" : "About");
-        infoBtn->setStyleSheet(
-            "QPushButton{background:transparent;border:none;"
-            "border-radius:14px;color:#6e7681;font-size:14px;"
-            "min-height:28px;max-height:28px;}"
-            "QPushButton:hover{background:rgba(88,166,255,60);color:#58a6ff;}");
-        connect(infoBtn, &QPushButton::clicked, this, &MainWindow::showAboutDialog);
-        tb->addWidget(infoBtn);
-        tb->addSpacing(4);
 
         QPushButton *closeBtn = new QPushButton("\u2715");
         closeBtn->setFixedSize(28,28);
@@ -1557,11 +1551,11 @@ void MainWindow::showAboutDialog()
 
     // Close button
     QPushButton *okBtn = new QPushButton("OK");
-    okBtn->setFixedWidth(80);
+    okBtn->setFixedSize(50, 26);
     okBtn->setStyleSheet(
-        "QPushButton{background:#21262d;color:#c9d1d9;border:1px solid #30363d;"
-        "border-radius:6px;padding:6px 12px;font-weight:600;}"
-        "QPushButton:hover{background:#30363d;}");
+        "QPushButton{background:transparent;color:#8b949e;border:none;"
+        "font-size:11px;}"
+        "QPushButton:hover{color:#e6edf3;}");
     connect(okBtn, &QPushButton::clicked, dlg, &QDialog::accept);
     lay->addWidget(okBtn, 0, Qt::AlignCenter);
 
