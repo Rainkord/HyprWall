@@ -331,7 +331,8 @@ void MainWindow::buildUi()
         title->setCursor(Qt::PointingHandCursor);
         title->setStyleSheet(
             "QPushButton{background:transparent;border:none;color:#e6edf3;"
-            "font-size:18px;font-weight:700;letter-spacing:0.5px;text-align:left;}"
+            "font-size:18px;font-weight:700;letter-spacing:0.5px;text-align:left;"
+            "padding:0;margin:0;}"
             "QPushButton:hover{color:#58a6ff;}");
         connect(title, &QPushButton::clicked, this, &MainWindow::showAboutDialog);
         tb->addWidget(title); tb->addStretch();
@@ -1551,11 +1552,13 @@ void MainWindow::showAboutDialog()
 
     // Close button
     QPushButton *okBtn = new QPushButton("OK");
-    okBtn->setFixedSize(50, 26);
+    okBtn->setFixedHeight(28);
+    okBtn->setMinimumWidth(60);
     okBtn->setStyleSheet(
-        "QPushButton{background:transparent;color:#8b949e;border:none;"
-        "font-size:11px;}"
-        "QPushButton:hover{color:#e6edf3;}");
+        "QPushButton{background:transparent;color:#8b949e;"
+        "border:1px solid #30363d;border-radius:6px;"
+        "padding:4px 16px;font-size:12px;}"
+        "QPushButton:hover{color:#e6edf3;border-color:#58a6ff;}");
     connect(okBtn, &QPushButton::clicked, dlg, &QDialog::accept);
     lay->addWidget(okBtn, 0, Qt::AlignCenter);
 
