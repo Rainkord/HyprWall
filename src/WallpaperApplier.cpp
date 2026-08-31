@@ -14,7 +14,7 @@
 #include <QRandomGenerator>
 
 static const QStringList VIDEO_EXTS = {
-    "mp4","mkv","avi","webm","mov","gif","flv","wmv"
+    "mp4","mkv","avi","webm","mov","flv","wmv"
 };
 
 bool WallpaperApplier::isVideoFile(const QString &path)

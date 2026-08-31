@@ -29,7 +29,7 @@ public:
     void setChecked(bool on, bool animated = true) {
         if (m_checked == on) return;
         m_checked = on;
-        int target = on ? (width() - 23) : 3;
+        int target = on ? 23 : 3;
         if (animated) {
             m_anim->stop();
             m_anim->setStartValue(m_knobX);

@@ -39,6 +39,7 @@
 #include "MonitorBar.h"
 #include "GalleryDelegate.h"
 #include "GalleryConstants.h"
+#include "ThumbCache.h"
 #include <QtConcurrent/QtConcurrent>
 #include <QFutureWatcher>
 #include <QFileSystemWatcher>
@@ -120,10 +121,16 @@ MainWindow::MainWindow(QWidget *parent)
 {
     setAttribute(Qt::WA_TranslucentBackground, true);
     setWindowFlags(windowFlags() | Qt::FramelessWindowHint);
-    m_s = stringsEN();
     qApp->setStyleSheet(loadStyleSheet());
     ConfigManager::instance().load();
+
+    // Restore saved language from dedicated file
+    int savedLang = ConfigManager::instance().loadLanguage();
+    m_isRU = (savedLang == 1);
+    m_s = m_isRU ? stringsRU() : stringsEN();
+
     buildUi();
+
     loadMonitors();
     startEntranceAnimation();
 }
@@ -383,11 +390,28 @@ void MainWindow::buildUi()
         m_langCombo = new QComboBox;
         m_langCombo->addItems({"English", "\u0420\u0443\u0441\u0441\u043a\u0438\u0439"});
         m_langCombo->setFixedWidth(120);
-        connect(m_langCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+        // Restore saved language index
+        m_langCombo->blockSignals(true);
+        m_langCombo->setCurrentIndex(ConfigManager::instance().loadLanguage());
+        m_langCombo->blockSignals(false);
+        connect(m_langCombo, &QComboBox::currentIndexChanged,
                 this, &MainWindow::onLanguageChanged);
         row->addWidget(m_langLabel);
         row->addSpacing(6);
         row->addWidget(m_langCombo);
+        row->addSpacing(20);
+        // Same wallpaper toggle
+        m_sameWallpaperLabel = new QLabel(m_s.sameWallpaperLabel);
+        m_sameWallpaperLabel->setStyleSheet("color:#8b949e;font-size:12px;");
+        m_sameWallpaperSwitch = new ToggleSwitch(this);
+        m_sameWallpaperSwitch->setChecked(false, false);
+        m_sameWallpaper = ConfigManager::instance().loadSameWallpaper();
+        m_sameWallpaperSwitch->setChecked(m_sameWallpaper, false);
+        connect(m_sameWallpaperSwitch, &ToggleSwitch::toggled,
+                this, &MainWindow::onSameWallpaperToggled);
+        row->addWidget(m_sameWallpaperLabel);
+        row->addSpacing(6);
+        row->addWidget(m_sameWallpaperSwitch);
         row->addStretch();
         root->addLayout(row);
         // Thin separator line
@@ -396,6 +420,40 @@ void MainWindow::buildUi()
         sep->setStyleSheet("background:#21262d;max-height:1px;");
         root->addWidget(sep);
     }
+
+    // ── Tab bar (browser-style) ─────────────────────────────
+    m_tabBar = new QWidget;
+    m_tabBar->setFixedHeight(36);
+    m_tabBar->setStyleSheet("background:transparent;");
+    QHBoxLayout *tabLayout = new QHBoxLayout(m_tabBar);
+    tabLayout->setContentsMargins(0, 0, 0, 0);
+    tabLayout->setSpacing(0);
+
+    auto makeTabBtn = [this](const QString &text, int tabIdx) -> QPushButton* {
+        QPushButton *btn = new QPushButton(text);
+        btn->setCheckable(false);
+        btn->setFlat(true);
+        btn->setCursor(Qt::PointingHandCursor);
+        btn->setMinimumWidth(80);
+        btn->setFixedHeight(34);
+        btn->setProperty("tabIndex", tabIdx);
+        connect(btn, &QPushButton::clicked, this, [this, tabIdx]{ switchTab(tabIdx); });
+        return btn;
+    };
+
+    m_tabDesktopBtn = makeTabBtn(m_s.tabDesktop, 0);
+    m_tabLockBtn    = makeTabBtn(m_s.tabLockScreen, 1);
+    tabLayout->addWidget(m_tabDesktopBtn);
+    tabLayout->addWidget(m_tabLockBtn);
+    tabLayout->addStretch();
+
+    root->addWidget(m_tabBar);
+
+    // Thin separator after tabs
+    m_tabSep = new QFrame;
+    m_tabSep->setFrameShape(QFrame::HLine);
+    m_tabSep->setStyleSheet("background:#21262d;max-height:1px;");
+    root->addWidget(m_tabSep);
 
     // ── Monitor bar ──────────────────────────────────────────
     m_monitorBar = new MonitorBar(this);
@@ -469,7 +527,7 @@ void MainWindow::buildUi()
         QHBoxLayout *row = new QHBoxLayout(m_mediaModeRow);
         row->setContentsMargins(0,0,0,0); row->setSpacing(8);
         m_mediaModeLabel = new QLabel(m_s.slideshowModeLabel);
-        m_mediaModeLabel->setStyleSheet("color:#8b949e;");
+        m_mediaModeLabel->setStyleSheet("color:#8b949e;font-size:12px;");
         m_mediaModeCombo = new QComboBox;
         m_mediaModeCombo->addItems(m_s.slideshowModes);
         connect(m_mediaModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
@@ -485,33 +543,13 @@ void MainWindow::buildUi()
     m_mediaModeRow->hide();
     sg->addWidget(m_mediaModeRow);
 
-    // 5. Fill
-    m_fillRow = new QWidget;
-    {
-        QHBoxLayout *row = new QHBoxLayout(m_fillRow);
-        row->setContentsMargins(0,0,0,0); row->setSpacing(8);
-        m_fillLabel = new QLabel(m_s.fillLabel);
-        m_fillLabel->setFixedWidth(90);
-        m_fillLabel->setAlignment(Qt::AlignRight|Qt::AlignVCenter);
-        m_fillLabel->setStyleSheet("color:#8b949e;");
-        m_fillCombo = new QComboBox;
-        m_fillCombo->addItems(m_s.imgFillModes);
-        connect(m_fillCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-                this, &MainWindow::onFillModeChanged);
-        row->addWidget(m_fillLabel);
-        row->addWidget(m_fillCombo, 1);
-    }
-    sg->addWidget(m_fillRow);
-
-    // 6. Rotation
+    // 5. Rotation
     m_rotRow = new QWidget;
     {
         QHBoxLayout *row = new QHBoxLayout(m_rotRow);
         row->setContentsMargins(0,0,0,0); row->setSpacing(8);
         m_rotLabel = new QLabel(m_s.rotLabel);
-        m_rotLabel->setFixedWidth(90);
-        m_rotLabel->setAlignment(Qt::AlignRight|Qt::AlignVCenter);
-        m_rotLabel->setStyleSheet("color:#8b949e;");
+        m_rotLabel->setStyleSheet("color:#8b949e;font-size:12px;");
         m_rotCombo = new QComboBox;
         m_rotCombo->addItems(m_s.imgRotModes);
         connect(m_rotCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
@@ -579,6 +617,15 @@ void MainWindow::buildUi()
     sg->addWidget(m_bindRow);
 
     root->addWidget(m_settingsGroup);
+
+    // Initialize tab styles (must be after m_settingsGroup creation)
+    switchTab(0);
+
+    // Hide tab bar if same wallpaper mode is active
+    if (m_sameWallpaper) {
+        m_tabBar->setVisible(false);
+        m_tabSep->setVisible(false);
+    }
 
     // Gallery — outside settings group so it can stretch to window bottom
     buildGalleryPanel(root);
@@ -699,6 +746,12 @@ void MainWindow::refreshGallery()
 
     QList<GalleryItem> items = ConfigManager::instance().loadGallery();
 
+    // Prune stale disk cache entries
+    QSet<QString> validPaths;
+    for (const GalleryItem &it : items)
+        if (!it.isVideo) validPaths.insert(it.path);
+    ThumbCache::prune(validPaths);
+
     if (items.isEmpty()) {
         m_galleryList->hide();
         m_galleryEmptyLbl->show();
@@ -729,12 +782,19 @@ void MainWindow::refreshGallery()
             pp.drawText(vp.rect(), Qt::AlignCenter, "\u25b6");
             wi->setIcon(QIcon(vp));
         } else {
-            // Check cache first — no disk I/O needed if already loaded
+            // Check in-memory cache first
             if (m_thumbCache.contains(item.path)) {
                 wi->setIcon(QIcon(m_thumbCache[item.path]));
             } else {
-                // Leave icon empty (placeholder drawn by delegate), load async
-                loadThumbAsync(item.path, m_thumbGeneration);
+                // Try disk cache — instant if hit
+                QPixmap cached = ThumbCache::load(item.path, m_thumbW, m_thumbH);
+                if (!cached.isNull()) {
+                    m_thumbCache[item.path] = cached;
+                    wi->setIcon(QIcon(cached));
+                } else {
+                    // Leave icon empty (placeholder drawn by delegate), load async
+                    loadThumbAsync(item.path, m_thumbGeneration);
+                }
             }
         }
 
@@ -774,14 +834,15 @@ void MainWindow::loadThumbAsync(const QString &path, int generation)
                 }
             });
 
-    // The worker: load + scale entirely off the GUI thread
+    // The worker: load + scale entirely off the GUI thread, save to disk cache
     int tw = m_thumbW, th = m_thumbH;
     QFuture<QPixmap> future = QtConcurrent::run([path, tw, th]() -> QPixmap {
-        QPixmap px(path);
-        if (px.isNull()) return {};
-        return px.scaled(tw, th,
-                         Qt::KeepAspectRatioByExpanding,
-                         Qt::SmoothTransformation);
+        // Use QImageReader::setScaledSize to avoid 256MB limit on huge PNGs
+        QPixmap thumb = ThumbCache::loadScaled(path, tw, th);
+        if (thumb.isNull()) return {};
+        // Save to disk cache for instant loading next time
+        ThumbCache::save(path, tw, th, 0, 0, thumb);
+        return thumb;
     });
 
     watcher->setFuture(future);
@@ -795,23 +856,47 @@ void MainWindow::applyAndSaveCurrent()
     if (m_currentMonitor.isEmpty() || m_updatingControls) return;
     saveCurrentToPending();
 
-    const WallpaperConfig &cfg = m_pending[m_currentMonitor];
-    const MonitorSlideshowState &ss = m_ssState[m_currentMonitor];
-
     auto &cm = ConfigManager::instance();
-    cm.setConfig(m_currentMonitor, cfg);
-    cm.save();
 
-    if (ss.enabled) {
-        startSlideshowForMonitor(m_currentMonitor);
-        // Show slideshow indicator regardless of filePath
-        m_monitorBar->setMonitorMode(m_currentMonitor, 2, {});
+    if (m_lockScreenMode) {
+        // Lock screen mode — save to hyprlock config
+        const WallpaperConfig &hlCfg = m_hyprlockPending[m_currentMonitor];
+        cm.setHyprlockConfig(m_currentMonitor, hlCfg);
+        cm.save();
+        cm.writeHyprlockConf();
+
+        m_monitorBar->setMonitorMode(m_currentMonitor, 0,
+                                     hlCfg.filePath.isEmpty() ? QString() : hlCfg.filePath);
     } else {
-        stopSlideshowForMonitor(m_currentMonitor);
-        if (!cfg.filePath.isEmpty())
-            WallpaperApplier::apply(cfg);
-        bool vid = WallpaperApplier::isVideoFile(cfg.filePath);
-        m_monitorBar->setMonitorMode(m_currentMonitor, vid?1:0, vid?QString():cfg.filePath);
+        // Desktop mode — existing behavior
+        const WallpaperConfig &cfg = m_pending[m_currentMonitor];
+        const MonitorSlideshowState &ss = m_ssState[m_currentMonitor];
+
+        cm.setConfig(m_currentMonitor, cfg);
+        cm.save();
+
+        // Sync hyprlock if same wallpaper mode (only images, not videos)
+        if (m_sameWallpaper && !cfg.filePath.isEmpty() &&
+            !WallpaperApplier::isVideoFile(cfg.filePath)) {
+            WallpaperConfig hlCfg;
+            hlCfg.monitorName = m_currentMonitor;
+            hlCfg.filePath = cfg.filePath;
+            m_hyprlockPending[m_currentMonitor] = hlCfg;
+            cm.setHyprlockConfig(m_currentMonitor, hlCfg);
+            cm.writeHyprlockConf();
+        }
+
+        if (ss.enabled) {
+            startSlideshowForMonitor(m_currentMonitor);
+            m_monitorBar->setMonitorMode(m_currentMonitor, 2, {});
+        } else {
+            stopSlideshowForMonitor(m_currentMonitor);
+            if (!cfg.filePath.isEmpty())
+                WallpaperApplier::apply(cfg);
+            bool vid = WallpaperApplier::isVideoFile(cfg.filePath);
+            m_monitorBar->setMonitorMode(m_currentMonitor, vid?1:0, vid?QString():cfg.filePath,
+                                         static_cast<int>(cfg.fillMode), static_cast<int>(cfg.rotation));
+        }
     }
 }
 
@@ -831,7 +916,6 @@ void MainWindow::updateSlideshowDependentWidgets(bool ssOn)
 {
     m_timerRow->setVisible(ssOn);
     m_mediaModeRow->setVisible(ssOn);
-    m_fillRow->setVisible(!ssOn);
     m_rotRow->setVisible(!ssOn);
     if (ssOn) {
         m_audioRow->hide();
@@ -845,15 +929,13 @@ void MainWindow::switchToVideo(bool isVideo)
 {
     if (m_isVideo == isVideo) return;
     m_isVideo = isVideo;
-    int pf = m_fillCombo->currentIndex();
     int pr = m_rotCombo->currentIndex();
-    m_fillCombo->blockSignals(true); m_rotCombo->blockSignals(true);
-    m_fillCombo->clear(); m_rotCombo->clear();
-    if (isVideo) { m_fillCombo->addItems(m_s.vidFillModes); m_rotCombo->addItems(m_s.vidRotModes); }
-    else         { m_fillCombo->addItems(m_s.imgFillModes); m_rotCombo->addItems(m_s.imgRotModes); }
-    m_fillCombo->setCurrentIndex(std::min(pf, m_fillCombo->count()-1));
+    m_rotCombo->blockSignals(true);
+    m_rotCombo->clear();
+    if (isVideo) { m_rotCombo->addItems(m_s.vidRotModes); }
+    else         { m_rotCombo->addItems(m_s.imgRotModes); }
     m_rotCombo->setCurrentIndex(std::min(pr, m_rotCombo->count()-1));
-    m_fillCombo->blockSignals(false); m_rotCombo->blockSignals(false);
+    m_rotCombo->blockSignals(false);
 }
 
 void MainWindow::retranslateUi()
@@ -864,10 +946,12 @@ void MainWindow::retranslateUi()
     m_settingsGroup->setTitle(m_s.groupTitle);
     m_audioCheck->setText(m_s.audioCheck);
     m_volumeLabelW->setText(m_s.volumeLabel);
-    m_fillLabel->setText(m_s.fillLabel);
     m_rotLabel->setText(m_s.rotLabel);
     m_bindPrefixLabel->setText(m_s.bindPrefix);
     m_autostartLabel->setText(m_s.autostartLabel);
+    m_sameWallpaperLabel->setText(m_s.sameWallpaperLabel);
+    m_tabDesktopBtn->setText(m_s.tabDesktop);
+    m_tabLockBtn->setText(m_s.tabLockScreen);
     m_galleryGroup->setTitle(m_s.galleryTitle);
     m_galleryAddBtn->setText(m_s.galleryAddBtn);
     m_galleryEmptyLbl->setText(m_s.galleryEmptyHint);
@@ -890,14 +974,13 @@ void MainWindow::retranslateUi()
     m_intervalCombo->setCurrentIndex(std::max(0, ci));
     m_intervalCombo->blockSignals(false);
 
-    int fi = m_fillCombo->currentIndex(), ri = m_rotCombo->currentIndex();
-    m_fillCombo->blockSignals(true); m_rotCombo->blockSignals(true);
-    m_fillCombo->clear(); m_rotCombo->clear();
-    if (m_isVideo) { m_fillCombo->addItems(m_s.vidFillModes); m_rotCombo->addItems(m_s.vidRotModes); }
-    else           { m_fillCombo->addItems(m_s.imgFillModes); m_rotCombo->addItems(m_s.imgRotModes); }
-    m_fillCombo->setCurrentIndex(std::min(fi, m_fillCombo->count()-1));
+    int ri = m_rotCombo->currentIndex();
+    m_rotCombo->blockSignals(true);
+    m_rotCombo->clear();
+    if (m_isVideo) { m_rotCombo->addItems(m_s.vidRotModes); }
+    else           { m_rotCombo->addItems(m_s.imgRotModes); }
     m_rotCombo->setCurrentIndex(std::min(ri, m_rotCombo->count()-1));
-    m_fillCombo->blockSignals(false); m_rotCombo->blockSignals(false);
+    m_rotCombo->blockSignals(false);
 
     if (!m_currentMonitor.isEmpty()) populateSettings(m_currentMonitor);
     m_monitorBar->update();
@@ -907,6 +990,7 @@ void MainWindow::onLanguageChanged(int idx)
 {
     m_isRU = (idx == 1);
     m_s = m_isRU ? stringsRU() : stringsEN();
+    ConfigManager::instance().saveLanguage(idx);
     retranslateUi();
 }
 
@@ -935,6 +1019,12 @@ void MainWindow::loadMonitors()
         WallpaperConfig cfg = cm.getConfig(m.name);
         cfg.monitorName = m.name;
         m_pending[m.name] = cfg;
+
+        // Load hyprlock config
+        WallpaperConfig hlCfg = cm.getHyprlockConfig(m.name);
+        hlCfg.monitorName = m.name;
+        m_hyprlockPending[m.name] = hlCfg;
+
         MonitorSlideshowState &ss = m_ssState[m.name];
         ss.enabled      = cfg.slideshowEnabled;
         ss.intervalSecs = cfg.slideshowInterval;
@@ -944,10 +1034,15 @@ void MainWindow::loadMonitors()
             m_monitorBar->setMonitorMode(m.name, 2, {});
         } else if (!cfg.filePath.isEmpty()) {
             bool vid = WallpaperApplier::isVideoFile(cfg.filePath);
-            m_monitorBar->setMonitorMode(m.name, vid?1:0, vid?QString():cfg.filePath);
+            m_monitorBar->setMonitorMode(m.name, vid?1:0, vid?QString():cfg.filePath,
+                                         static_cast<int>(cfg.fillMode), static_cast<int>(cfg.rotation));
         }
     }
     if (!m_monitors.isEmpty()) onMonitorClicked(m_monitors.first().name);
+
+    // Apply same wallpaper initial state
+    if (m_sameWallpaper)
+        syncSameWallpaper();
 }
 
 void MainWindow::onMonitorClicked(const QString &name)
@@ -973,9 +1068,16 @@ void MainWindow::populateSettings(const QString &monitorName)
             .arg(it->width).arg(it->height).arg(it->refreshRate)
             .arg(it->scale, 0, 'f', 2));
 
-    WallpaperConfig cfg = m_pending.contains(monitorName)
-        ? m_pending[monitorName]
-        : ConfigManager::instance().getConfig(monitorName);
+    WallpaperConfig cfg;
+    if (m_lockScreenMode) {
+        cfg = m_hyprlockPending.contains(monitorName)
+            ? m_hyprlockPending[monitorName]
+            : ConfigManager::instance().getHyprlockConfig(monitorName);
+    } else {
+        cfg = m_pending.contains(monitorName)
+            ? m_pending[monitorName]
+            : ConfigManager::instance().getConfig(monitorName);
+    }
     cfg.monitorName = monitorName;
 
     const MonitorSlideshowState &ss = m_ssState.contains(monitorName)
@@ -995,13 +1097,12 @@ void MainWindow::populateSettings(const QString &monitorName)
     bool isVid = !cfg.filePath.isEmpty() && WallpaperApplier::isVideoFile(cfg.filePath);
     switchToVideo(isVid);
 
-    m_fillCombo->blockSignals(true); m_rotCombo->blockSignals(true);
-    m_fillCombo->setCurrentIndex(static_cast<int>(cfg.fillMode));
+    m_rotCombo->blockSignals(true);
     m_rotCombo->setCurrentIndex(static_cast<int>(cfg.rotation));
     m_audioCheck->setChecked(cfg.audioEnabled);
     m_volumeSlider->setValue(cfg.audioVolume);
     m_volumeLabel->setText(QString("%1%").arg(cfg.audioVolume));
-    m_fillCombo->blockSignals(false); m_rotCombo->blockSignals(false);
+    m_rotCombo->blockSignals(false);
 
     updateSlideshowDependentWidgets(ss.enabled);
     if (!ss.enabled) {
@@ -1023,8 +1124,13 @@ void MainWindow::populateSettings(const QString &monitorName)
     // Show correct indicator: slideshow=2, video=1, image=0
     if (ss.enabled)
         m_monitorBar->setMonitorMode(monitorName, 2, {});
+    else if (m_lockScreenMode)
+        m_monitorBar->setMonitorMode(monitorName, 0,
+                                     cfg.filePath.isEmpty() ? QString() : cfg.filePath,
+                                     0, 0);
     else
-        m_monitorBar->setMonitorMode(monitorName, isVid?1:0, isVid?QString():cfg.filePath);
+        m_monitorBar->setMonitorMode(monitorName, isVid?1:0, isVid?QString():cfg.filePath,
+                                     static_cast<int>(cfg.fillMode), static_cast<int>(cfg.rotation));
 
     m_updatingControls = false;
 }
@@ -1034,17 +1140,26 @@ void MainWindow::saveCurrentToPending()
     if (m_currentMonitor.isEmpty()) return;
     WallpaperConfig cfg;
     cfg.monitorName  = m_currentMonitor;
-    cfg.filePath     = m_pending.contains(m_currentMonitor)
-                       ? m_pending[m_currentMonitor].filePath : QString();
-    cfg.fillMode     = static_cast<FillMode>(m_fillCombo->currentIndex());
-    cfg.rotation     = static_cast<WallpaperRotation>(m_rotCombo->currentIndex());
-    cfg.audioEnabled = m_audioCheck->isChecked();
-    cfg.audioVolume  = m_volumeSlider->value();
-    const MonitorSlideshowState &ss = m_ssState[m_currentMonitor];
-    cfg.slideshowEnabled  = ss.enabled;
-    cfg.slideshowInterval = ss.intervalSecs;
-    cfg.slideshowMode     = ss.mediaMode;
-    m_pending[m_currentMonitor] = cfg;
+
+    if (m_lockScreenMode) {
+        cfg.filePath     = m_hyprlockPending.contains(m_currentMonitor)
+                           ? m_hyprlockPending[m_currentMonitor].filePath : QString();
+        cfg.fillMode     = FillMode::Cover;
+        cfg.rotation     = static_cast<WallpaperRotation>(m_rotCombo->currentIndex());
+        m_hyprlockPending[m_currentMonitor] = cfg;
+    } else {
+        cfg.filePath     = m_pending.contains(m_currentMonitor)
+                           ? m_pending[m_currentMonitor].filePath : QString();
+        cfg.fillMode     = FillMode::Cover;
+        cfg.rotation     = static_cast<WallpaperRotation>(m_rotCombo->currentIndex());
+        cfg.audioEnabled = m_audioCheck->isChecked();
+        cfg.audioVolume  = m_volumeSlider->value();
+        const MonitorSlideshowState &ss = m_ssState[m_currentMonitor];
+        cfg.slideshowEnabled  = ss.enabled;
+        cfg.slideshowInterval = ss.intervalSecs;
+        cfg.slideshowMode     = ss.mediaMode;
+        m_pending[m_currentMonitor] = cfg;
+    }
 }
 
 void MainWindow::onApplyAll()
@@ -1054,6 +1169,10 @@ void MainWindow::onApplyAll()
     for (auto it = m_pending.cbegin(); it != m_pending.cend(); ++it)
         cm.setConfig(it.key(), it.value());
     cm.save();
+
+    // Sync hyprlock if same wallpaper mode
+    if (m_sameWallpaper)
+        syncSameWallpaper();
 
     QMap<QString, WallpaperConfig> staticConfigs;
     for (auto it = m_pending.cbegin(); it != m_pending.cend(); ++it) {
@@ -1079,7 +1198,9 @@ void MainWindow::onApplyAll()
         } else {
             bool vid = WallpaperApplier::isVideoFile(it.value().filePath);
             m_monitorBar->setMonitorMode(mon, vid?1:0,
-                                         vid?QString():it.value().filePath);
+                                         vid?QString():it.value().filePath,
+                                         static_cast<int>(it.value().fillMode),
+                                         static_cast<int>(it.value().rotation));
         }
     }
 }
@@ -1105,9 +1226,14 @@ void MainWindow::onGalleryRemove(const QString &path)
     m_thumbCache.remove(path);
     ConfigManager::instance().removeFromGallery(path);
     refreshGallery();
-    if (m_pending.contains(m_currentMonitor) &&
+    if (!m_lockScreenMode && m_pending.contains(m_currentMonitor) &&
         m_pending[m_currentMonitor].filePath == path) {
         m_pending[m_currentMonitor].filePath.clear();
+        m_monitorBar->setMonitorMode(m_currentMonitor, -1, {});
+    }
+    if (m_lockScreenMode && m_hyprlockPending.contains(m_currentMonitor) &&
+        m_hyprlockPending[m_currentMonitor].filePath == path) {
+        m_hyprlockPending[m_currentMonitor].filePath.clear();
         m_monitorBar->setMonitorMode(m_currentMonitor, -1, {});
     }
 }
@@ -1115,6 +1241,23 @@ void MainWindow::onGalleryRemove(const QString &path)
 void MainWindow::onGalleryItemClicked(const QString &path, bool isVideo)
 {
     if (m_currentMonitor.isEmpty()) return;
+
+    if (m_lockScreenMode) {
+        // Lock screen mode — set hyprlock background
+        if (isVideo) return; // Lock screen only supports images
+        WallpaperConfig cfg;
+        cfg.monitorName = m_currentMonitor;
+        cfg.filePath = path;
+        m_hyprlockPending[m_currentMonitor] = cfg;
+        auto &cm = ConfigManager::instance();
+        cm.setHyprlockConfig(m_currentMonitor, cfg);
+        cm.save();
+        cm.writeHyprlockConf();
+        m_monitorBar->setMonitorMode(m_currentMonitor, 0, path);
+        return;
+    }
+
+    // Desktop mode — existing behavior
     if (!m_pending.contains(m_currentMonitor)) {
         WallpaperConfig cfg; cfg.monitorName = m_currentMonitor;
         m_pending[m_currentMonitor] = cfg;
@@ -1138,8 +1281,22 @@ void MainWindow::onGalleryItemClicked(const QString &path, bool isVideo)
     // When slideshow is on, item clicks don't change the bar indicator
     if (!ssOn)
         m_monitorBar->setMonitorMode(m_currentMonitor, isVideo?1:0,
-                                     isVideo?QString():path);
+                                     isVideo?QString():path,
+                                     static_cast<int>(m_pending[m_currentMonitor].fillMode),
+                                     static_cast<int>(m_pending[m_currentMonitor].rotation));
     applyAndSaveCurrent();
+
+    // Sync hyprlock if same wallpaper mode
+    if (m_sameWallpaper && !isVideo) {
+        WallpaperConfig hlCfg;
+        hlCfg.monitorName = m_currentMonitor;
+        hlCfg.filePath = path;
+        m_hyprlockPending[m_currentMonitor] = hlCfg;
+        auto &cm = ConfigManager::instance();
+        cm.setHyprlockConfig(m_currentMonitor, hlCfg);
+        cm.save();
+        cm.writeHyprlockConf();
+    }
 }
 
 void MainWindow::onSlideshowToggled(bool checked)
@@ -1168,11 +1325,6 @@ void MainWindow::onSlideshowToggled(bool checked)
     }
 }
 
-void MainWindow::onFillModeChanged(int)
-{
-    applyAndSaveCurrent();
-}
-
 void MainWindow::onRotationChanged(int)
 {
     applyAndSaveCurrent();
@@ -1190,9 +1342,113 @@ void MainWindow::onVolumeChanged(int val)
     m_volumeLabel->setText(QString("%1%").arg(val));
 }
 
+void MainWindow::switchTab(int tab)
+{
+    m_activeTab = tab;
+    m_lockScreenMode = (tab == 1);
+
+    // Style tabs
+    auto styleTab = [](QPushButton *btn, bool active) {
+        if (active) {
+            btn->setStyleSheet(
+                "QPushButton{background:transparent;border:none;"
+                "border-bottom:2px solid #58a6ff;color:#e6edf3;"
+                "padding:6px 16px;font-weight:600;font-size:12px;"
+                "min-height:22px;max-height:22px;}");
+        } else {
+            btn->setStyleSheet(
+                "QPushButton{background:transparent;border:none;"
+                "border-bottom:2px solid transparent;color:#8b949e;"
+                "padding:6px 16px;font-size:12px;"
+                "min-height:22px;max-height:22px;}"
+                "QPushButton:hover{color:#c9d1d9;}");
+        }
+    };
+
+    styleTab(m_tabDesktopBtn, tab == 0);
+    styleTab(m_tabLockBtn, tab == 1);
+
+    // Update settings group title
+    m_settingsGroup->setTitle(m_lockScreenMode ? m_s.lockScreenGroupTitle : m_s.groupTitle);
+
+    // Always show settings group
+    m_settingsGroup->show();
+
+    if (m_lockScreenMode) {
+        // Update monitor bar to show hyprlock wallpapers
+        for (const MonitorInfo &m : m_monitors) {
+            const WallpaperConfig &hlCfg = m_hyprlockPending.value(m.name);
+            if (!hlCfg.filePath.isEmpty())
+                m_monitorBar->setMonitorMode(m.name, 0, hlCfg.filePath);
+            else
+                m_monitorBar->setMonitorMode(m.name, -1, {});
+        }
+    }
+
+    if (!m_currentMonitor.isEmpty())
+        populateSettings(m_currentMonitor);
+}
+
+void MainWindow::onSameWallpaperToggled(bool checked)
+{
+    m_sameWallpaper = checked;
+    ConfigManager::instance().saveSameWallpaper(checked);
+
+    // Hide/show tab bar
+    m_tabBar->setVisible(!checked);
+    m_tabSep->setVisible(!checked);
+
+    if (checked) {
+        // Sync mode: switch to desktop tab, apply same wallpaper
+        switchTab(0);
+        syncSameWallpaper();
+    m_settingsGroup->setTitle(m_lockScreenMode ? m_s.lockScreenGroupTitle : m_s.groupTitle);
+    } else {
+        // Separate mode: restore active tab
+        switchTab(m_activeTab);
+    }
+}
+
+void MainWindow::syncSameWallpaper()
+{
+    // Copy desktop wallpaper paths to hyprlock configs for all monitors
+    auto &cm = ConfigManager::instance();
+    for (auto it = m_pending.cbegin(); it != m_pending.cend(); ++it) {
+        WallpaperConfig hlCfg;
+        hlCfg.monitorName = it.key();
+        // Only sync image files (hyprlock doesn't support video)
+        if (!it.value().filePath.isEmpty() &&
+            !WallpaperApplier::isVideoFile(it.value().filePath)) {
+            hlCfg.filePath = it.value().filePath;
+        }
+        m_hyprlockPending[it.key()] = hlCfg;
+        cm.setHyprlockConfig(it.key(), hlCfg);
+    }
+    cm.save();
+    cm.writeHyprlockConf();
+
+    // Update monitor bar if on lock screen tab
+    if (m_lockScreenMode) {
+        for (const MonitorInfo &m : m_monitors) {
+            const WallpaperConfig &hlCfg = m_hyprlockPending.value(m.name);
+            if (!hlCfg.filePath.isEmpty())
+                m_monitorBar->setMonitorMode(m.name, 0, hlCfg.filePath);
+            else
+                m_monitorBar->setMonitorMode(m.name, -1, {});
+        }
+    }
+}
+
 void MainWindow::resizeEvent(QResizeEvent *ev)
 {
     QMainWindow::resizeEvent(ev);
     recalcGalleryLayout();
     refreshGallery();
+}
+
+void MainWindow::closeEvent(QCloseEvent *ev)
+{
+    ConfigManager::instance().saveLanguage(m_isRU ? 1 : 0);
+    ConfigManager::instance().saveSameWallpaper(m_sameWallpaper);
+    QMainWindow::closeEvent(ev);
 }

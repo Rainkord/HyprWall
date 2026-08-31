@@ -20,6 +20,7 @@ class QListWidget;
 class MonitorBar;
 class ToggleSwitch;
 class QFileSystemWatcher;
+class QFrame;
 
 struct MonitorSlideshowState {
     bool    enabled      = false;
@@ -50,18 +51,20 @@ protected:
     void mouseMoveEvent(QMouseEvent *) override;
     void resizeEvent(QResizeEvent *ev) override;
     void showEvent(QShowEvent *ev) override;
+    void closeEvent(QCloseEvent *ev) override;
 
 private slots:
     void onMonitorClicked(const QString &name);
     void onAutostartToggle();
     void onLanguageChanged(int idx);
     void onApplyAll();
-    void onFillModeChanged(int);
     void onRotationChanged(int);
     void onAudioToggled(bool);
     void onVolumeChanged(int);
     void onSlideshowToggled(bool);
     void onGalleryAdd();
+    void switchTab(int tab);
+    void onSameWallpaperToggled(bool checked);
 
 private:
     void buildUi();
@@ -82,6 +85,7 @@ private:
     void animateSectionShow(QWidget *w);
     void animateSectionHide(QWidget *w);
     void startEntranceAnimation();
+    void syncSameWallpaper();
 
     // Per-monitor slideshow
     MonitorSlideshowState &slideshowState(const QString &monitor);
@@ -98,6 +102,7 @@ private:
     bool                m_isVideo          = false;
     bool                m_updatingControls = false;
     QMap<QString, WallpaperConfig>       m_pending;
+    QMap<QString, WallpaperConfig>       m_hyprlockPending;
     QMap<QString, MonitorSlideshowState> m_ssState;
 
     // Gallery adaptive layout
@@ -129,6 +134,20 @@ private:
     QLabel       *m_autostartLabel   = nullptr;
     ToggleSwitch *m_autostartSwitch  = nullptr;
 
+    // Tab bar (browser-style)
+    QWidget      *m_tabBar           = nullptr;
+    QFrame       *m_tabSep           = nullptr;
+    QPushButton  *m_tabDesktopBtn    = nullptr;
+    QPushButton  *m_tabLockBtn       = nullptr;
+    int           m_activeTab        = 0; // 0=desktop, 1=lock screen
+
+    // Same wallpaper toggle (on desktop tab)
+    QLabel       *m_sameWallpaperLabel  = nullptr;
+    ToggleSwitch *m_sameWallpaperSwitch = nullptr;
+    bool          m_sameWallpaper       = false;
+
+    bool          m_lockScreenMode    = false;
+
     QLabel       *m_langLabel        = nullptr;
     QComboBox    *m_langCombo        = nullptr;
 
@@ -159,10 +178,7 @@ private:
     QSlider      *m_volumeSlider     = nullptr;
     QLabel       *m_volumeLabel      = nullptr;
 
-    // Fill / rotation
-    QWidget      *m_fillRow          = nullptr;
-    QLabel       *m_fillLabel        = nullptr;
-    QComboBox    *m_fillCombo        = nullptr;
+    // Rotation
     QWidget      *m_rotRow           = nullptr;
     QLabel       *m_rotLabel         = nullptr;
     QComboBox    *m_rotCombo         = nullptr;

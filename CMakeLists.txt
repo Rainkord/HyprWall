@@ -7,7 +7,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets Gui Core)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Gui Core Concurrent)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(WAYLAND_CLIENT REQUIRED wayland-client)
@@ -43,6 +43,7 @@ target_link_libraries(hyprwall
     Qt6::Widgets
     Qt6::Gui
     Qt6::Core
+    Qt6::Concurrent
     ${WAYLAND_CLIENT_LIBRARIES}
 )
 

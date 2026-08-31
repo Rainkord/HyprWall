@@ -9,6 +9,7 @@
 #include <QMutex>
 #include <QDateTime>
 #include <QDebug>
+#include <QRegularExpression>
 
 ConfigManager& ConfigManager::instance()
 {
@@ -45,6 +46,20 @@ void ConfigManager::setConfig(const QString &monitor, const WallpaperConfig &cfg
     m_configs[monitor] = cfg;
 }
 
+WallpaperConfig ConfigManager::getHyprlockConfig(const QString &monitor) const
+{
+    if (m_hyprlockConfigs.contains(monitor))
+        return m_hyprlockConfigs.value(monitor);
+    WallpaperConfig cfg;
+    cfg.monitorName = monitor;
+    return cfg;
+}
+
+void ConfigManager::setHyprlockConfig(const QString &monitor, const WallpaperConfig &cfg)
+{
+    m_hyprlockConfigs[monitor] = cfg;
+}
+
 void ConfigManager::load()
 {
     const QString path = configPath();
@@ -66,6 +81,13 @@ bool ConfigManager::loadFromFile(const QString &path)
     if (s.status() != QSettings::NoError) return false;
 
     for (const QString &mon : s.childGroups()) {
+        if (mon == "General") {
+            s.beginGroup("General");
+            for (const QString &key : s.childKeys())
+                m_general[key] = s.value(key);
+            s.endGroup();
+            continue;
+        }
         s.beginGroup(mon);
         WallpaperConfig cfg;
         cfg.monitorName         = mon;
@@ -77,8 +99,15 @@ bool ConfigManager::loadFromFile(const QString &path)
         cfg.slideshowEnabled    = s.value("slideshowEnabled",   false).toBool();
         cfg.slideshowInterval   = s.value("slideshowInterval",  300).toInt();
         cfg.slideshowMode       = s.value("slideshowMode",      2).toInt();
-        m_configs[mon]          = cfg;
         s.endGroup();
+
+        if (mon.startsWith("Hyprlock-")) {
+            QString monitorName = mon.mid(9); // strip "Hyprlock-"
+            cfg.monitorName = monitorName;
+            m_hyprlockConfigs[monitorName] = cfg;
+        } else {
+            m_configs[mon] = cfg;
+        }
     }
     return true;
 }
@@ -101,6 +130,12 @@ void ConfigManager::save()
         return;
     }
     QTextStream ts(&sf);
+    // General settings
+    if (!m_general.isEmpty()) {
+        ts << "[General]\n";
+        for (auto it = m_general.cbegin(); it != m_general.cend(); ++it)
+            ts << it.key() << "=" << it.value().toString() << "\n";
+    }
     for (auto it = m_configs.cbegin(); it != m_configs.cend(); ++it) {
         const WallpaperConfig &cfg = it.value();
         ts << "[" << it.key() << "]\n";
@@ -112,6 +147,12 @@ void ConfigManager::save()
         ts << "slideshowEnabled=" << (cfg.slideshowEnabled ? "true" : "false") << "\n";
         ts << "slideshowInterval=" << cfg.slideshowInterval << "\n";
         ts << "slideshowMode=" << cfg.slideshowMode << "\n";
+    }
+    // Hyprlock configs
+    for (auto it = m_hyprlockConfigs.cbegin(); it != m_hyprlockConfigs.cend(); ++it) {
+        const WallpaperConfig &cfg = it.value();
+        ts << "[Hyprlock-" << it.key() << "]\n";
+        ts << "filePath=" << cfg.filePath << "\n";
     }
     if (!sf.commit()) {
         qWarning() << "ConfigManager::save: commit failed" << sf.errorString();
@@ -137,7 +178,7 @@ QList<GalleryItem> ConfigManager::loadGallery() const
         return m_galleryCache;
 
     const QStringList imageExts = {"jpg","jpeg","png","bmp","webp","tiff"};
-    const QStringList videoExts = {"mp4","mkv","avi","webm","mov","gif","flv","wmv"};
+    const QStringList videoExts = {"mp4","mkv","avi","webm","mov","flv","wmv"};
     d.setSorting(QDir::Time | QDir::Reversed);
     QStringList allExts;
     for (auto &e : imageExts) allExts << ("*." + e) << ("*." + e.toUpper());
@@ -215,4 +256,111 @@ void ConfigManager::invalidateGalleryCache() const
     QMutexLocker lock(&m_galleryMutex);
     m_galleryCache.clear();
     m_galleryDirMtime = QDateTime();
+}
+
+void ConfigManager::writeHyprlockConf()
+{
+    QString hyprlockPath = QDir::homePath() + "/.config/hypr/hyprlock.conf";
+    QFile readFile(hyprlockPath);
+    if (!readFile.open(QIODevice::ReadOnly | QIODevice::Text)) return;
+    QString content = QString::fromUtf8(readFile.readAll());
+    readFile.close();
+
+    // Remove all existing background { } blocks (greedy match between first and last)
+    static QRegularExpression reBg(R"(background\s*\{[^}]*\})");
+    content.remove(reBg);
+
+    // Build new background blocks from hyprlock configs
+    // Preserve the order from the existing file's comment markers, but fallback to
+    // monitor order: DP-1, DP-2, DP-3, HDMI-A-1
+    QStringList monitorOrder = {"DP-1", "DP-2", "DP-3", "HDMI-A-1"};
+    // Also add any monitors in hyprlockConfigs that aren't in the standard order
+    for (auto it = m_hyprlockConfigs.constBegin(); it != m_hyprlockConfigs.constEnd(); ++it) {
+        if (!monitorOrder.contains(it.key()))
+            monitorOrder.append(it.key());
+    }
+
+    QString newBlocks;
+    for (const QString &mon : monitorOrder) {
+        if (!m_hyprlockConfigs.contains(mon)) continue;
+        const WallpaperConfig &cfg = m_hyprlockConfigs[mon];
+        if (cfg.filePath.isEmpty()) continue;
+
+        newBlocks += QString(
+            "background {\n"
+            "    monitor = %1\n"
+            "    path = %2\n"
+            "    blur_passes = 3\n"
+            "    contrast = 0.8916\n"
+            "    brightness = 0.8172\n"
+            "    vibrancy = 0.1696\n"
+            "    vibrancy_darkness = 0.0\n"
+            "}\n\n"
+        ).arg(mon, cfg.filePath);
+    }
+
+    // Insert new background blocks after the first comment section header or at top
+    int insertPos = 0;
+    // Find the position right after "# =========================\n# ФОНЫ\n# ========================="
+    static QRegularExpression reHeader(R"(# =+\n# ФОНЫ\n# =+\n)");
+    QRegularExpressionMatch match = reHeader.match(content);
+    if (match.hasMatch()) {
+        insertPos = match.capturedEnd();
+    }
+
+    content.insert(insertPos, newBlocks);
+
+    // Clean up excessive blank lines (more than 2 consecutive)
+    static QRegularExpression reBlank("\n{4,}");
+    content.replace(reBlank, "\n\n\n");
+
+    QSaveFile writeFile(hyprlockPath);
+    if (!writeFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) return;
+    writeFile.write(content.toUtf8());
+    writeFile.commit();
+}
+
+QVariant ConfigManager::getSetting(const QString &key, const QVariant &def) const
+{
+    return m_general.value(key, def);
+}
+
+void ConfigManager::setSetting(const QString &key, const QVariant &val)
+{
+    m_general[key] = val;
+}
+
+int ConfigManager::loadLanguage()
+{
+    QString path = configPath().replace("config.ini", "language");
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) return 0;
+    bool ok = false;
+    int lang = QString::fromUtf8(f.readAll()).trimmed().toInt(&ok);
+    return ok ? lang : 0;
+}
+
+void ConfigManager::saveLanguage(int langIndex)
+{
+    QString path = configPath().replace("config.ini", "language");
+    QFile f(path);
+    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
+        f.write(QByteArray::number(langIndex));
+}
+
+bool ConfigManager::loadSameWallpaper()
+{
+    QString path = configPath().replace("config.ini", "samewallpaper");
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) return false;
+    QString val = QString::fromUtf8(f.readAll()).trimmed();
+    return val == "1" || val.toLower() == "true";
+}
+
+void ConfigManager::saveSameWallpaper(bool on)
+{
+    QString path = configPath().replace("config.ini", "samewallpaper");
+    QFile f(path);
+    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
+        f.write(on ? "1" : "0");
 }

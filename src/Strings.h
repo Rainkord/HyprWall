@@ -40,6 +40,13 @@ struct Strings {
     QStringList slideshowModes;
     // Interval preset labels
     QStringList intervalLabels;
+    // Lock screen
+    QString lockScreenLabel;
+    QString lockScreenGroupTitle;
+    // Tabs
+    QString tabDesktop;
+    QString tabLockScreen;
+    QString sameWallpaperLabel;
 };
 
 inline Strings stringsEN()
@@ -85,6 +92,13 @@ inline Strings stringsEN()
         "Photos + Videos"
     };
     s.intervalLabels = { "1 min", "5 min", "10 min", "15 min", "30 min", "1 hour" };
+    // Lock screen
+    s.lockScreenLabel      = "Lock Screen:";
+    s.lockScreenGroupTitle = "LOCK SCREEN WALLPAPER";
+    // Tabs
+    s.tabDesktop       = "Desktop";
+    s.tabLockScreen    = "Lock Screen";
+    s.sameWallpaperLabel = "Sync with lock screen:";
     return s;
 }
 
@@ -144,5 +158,12 @@ inline Strings stringsRU()
         "30 \u043c\u0438\u043d",
         "1 \u0447\u0430\u0441"
     };
+    // Lock screen
+    s.lockScreenLabel      = "\u042d\u043a\u0440\u0430\u043d \u0431\u043b\u043e\u043a\u0438\u0440\u043e\u0432\u043a\u0438:";
+    s.lockScreenGroupTitle = "\u041e\u0411\u041e\u0418 \u0417\u0410\u0411\u041b\u041e\u041a\u0418\u0420\u041e\u0412\u041a\u0418";
+    // Tabs
+    s.tabDesktop       = "\u0420\u0430\u0431\u043e\u0447\u0438\u0439 \u0441\u0442\u043e\u043b";
+    s.tabLockScreen    = "\u042d\u043a\u0440\u0430\u043d \u0431\u043b\u043e\u043a\u0438\u0440\u043e\u0432\u043a\u0438";
+    s.sameWallpaperLabel = "\u0421\u0438\u043d\u0445\u0440\u043e\u043d\u0438\u0437\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u043e\u0431\u043e\u0438 \u0441 \u044d\u043a\u0440\u0430\u043d\u043e\u043c \u0431\u043b\u043e\u043a\u0438\u0440\u043e\u0432\u043a\u0438:";
     return s;
 }

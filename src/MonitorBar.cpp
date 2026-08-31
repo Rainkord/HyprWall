@@ -47,10 +47,13 @@ void MonitorBar::paintEvent(QPaintEvent*) {
 
         if (mode==0 && m_pixmaps.contains(mr.name)) {
             const QPixmap &px=m_pixmaps[mr.name];
-            QSize sc2=px.size().scaled(r.size(),Qt::KeepAspectRatioByExpanding);
-            QPixmap sp=px.scaled(sc2,Qt::IgnoreAspectRatio,Qt::SmoothTransformation);
-            int cx=(sp.width()-rw)/2,cy=(sp.height()-rh)/2;
-            p.drawPixmap(r.topLeft(),sp,QRect(cx,cy,rw,rh));
+            int fm = m_fillModes.value(mr.name, 0);
+            Qt::AspectRatioMode arMode = (fm == 0)
+                ? Qt::KeepAspectRatioByExpanding  // Cover
+                : Qt::KeepAspectRatio;            // Contain
+            QSize sc2=px.size().scaled(r.size(), arMode);
+            int sx=(r.width()-sc2.width())/2, sy=(r.height()-sc2.height())/2;
+            p.drawPixmap(r.x()+sx, r.y()+sy, sc2.width(), sc2.height(), px);
         } else if (mode==1) {
             p.fillRect(r,QColor(16,10,30));
             QFont f=p.font(); f.setPointSize(std::max(8,rh/5)); p.setFont(f);
