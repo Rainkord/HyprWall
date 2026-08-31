@@ -11,6 +11,7 @@
 #include <QFutureWatcher>
 #include "Types.h"
 #include "ThumbCache.h"
+#include "ImageCache.h"
 
 class MonitorBar : public QWidget {
     Q_OBJECT
@@ -46,7 +47,8 @@ public:
         m_modes[mon]=mode;
         m_fillModes[mon]=fillMode;
         if (mode==0 && !imgPath.isEmpty()) {
-            QString cacheKey = QString("%1|%2|%3").arg(imgPath).arg(fillMode).arg(rotation);
+            QString srcPath = ImageCache::getCompressedOrOriginal(imgPath);
+            QString cacheKey = QString("%1|%2|%3").arg(srcPath).arg(fillMode).arg(rotation);
             // Check in-memory cache
             if (m_cache.contains(cacheKey)) {
                 m_pixmaps[mon] = m_cache[cacheKey];
@@ -54,7 +56,7 @@ public:
                 return;
             }
             // Check disk cache
-            QPixmap diskCached = ThumbCache::load(imgPath, 400, 225, fillMode, rotation);
+            QPixmap diskCached = ThumbCache::load(srcPath, 400, 225, fillMode, rotation);
             if (!diskCached.isNull()) {
                 m_cache[cacheKey] = diskCached;
                 m_pixmaps[mon] = diskCached;
@@ -68,22 +70,21 @@ public:
             }
             auto *watcher = new QFutureWatcher<QPixmap>(this);
             m_loaders[mon] = watcher;
-            connect(watcher, &QFutureWatcher<QPixmap>::finished, this, [this, mon, watcher, cacheKey, imgPath, fillMode, rotation]() {
+            connect(watcher, &QFutureWatcher<QPixmap>::finished, this, [this, mon, watcher, cacheKey, srcPath, fillMode, rotation]() {
                 if (m_loaders.value(mon) != watcher) { watcher->deleteLater(); return; }
                 QPixmap thumb = watcher->result();
                 if (!thumb.isNull()) {
                     m_pixmaps[mon] = thumb;
                     m_cache[cacheKey] = thumb;
                     // Save to disk cache
-                    ThumbCache::save(imgPath, 400, 225, fillMode, rotation, thumb);
+                    ThumbCache::save(srcPath, 400, 225, fillMode, rotation, thumb);
                 }
                 watcher->deleteLater();
                 m_loaders.remove(mon);
                 update();
             });
-            watcher->setFuture(QtConcurrent::run([imgPath, fillMode, rotation]() -> QPixmap {
-                // Use QImageReader::setScaledSize to handle huge PNGs (12000x14000)
-                QPixmap thumb = ThumbCache::loadScaled(imgPath, 400, 225, rotation);
+            watcher->setFuture(QtConcurrent::run([srcPath, fillMode, rotation]() -> QPixmap {
+                QPixmap thumb = ThumbCache::loadScaled(srcPath, 400, 225, rotation);
                 return thumb;
             }));
         } else if (mode!=0) {

@@ -40,6 +40,7 @@
 #include "GalleryDelegate.h"
 #include "GalleryConstants.h"
 #include "ThumbCache.h"
+#include "ImageCache.h"
 #include <QtConcurrent/QtConcurrent>
 #include <QFutureWatcher>
 #include <QFileSystemWatcher>
@@ -751,6 +752,7 @@ void MainWindow::refreshGallery()
     for (const GalleryItem &it : items)
         if (!it.isVideo) validPaths.insert(it.path);
     ThumbCache::prune(validPaths);
+    ImageCache::prune(validPaths);
 
     if (items.isEmpty()) {
         m_galleryList->hide();
@@ -836,11 +838,13 @@ void MainWindow::loadThumbAsync(const QString &path, int generation)
 
     // The worker: load + scale entirely off the GUI thread, save to disk cache
     int tw = m_thumbW, th = m_thumbH;
-    QFuture<QPixmap> future = QtConcurrent::run([path, tw, th]() -> QPixmap {
-        // Use QImageReader::setScaledSize to avoid 256MB limit on huge PNGs
-        QPixmap thumb = ThumbCache::loadScaled(path, tw, th);
+    // Use compressed copy as source for thumbnail generation (much faster I/O)
+    QString srcPath = ImageCache::getCompressedOrOriginal(path);
+    QFuture<QPixmap> future = QtConcurrent::run([srcPath, path, tw, th]() -> QPixmap {
+        // Ensure compressed copy exists (creates JPEG q70 if missing)
+        ImageCache::ensureCompressed(path);
+        QPixmap thumb = ThumbCache::loadScaled(srcPath, tw, th);
         if (thumb.isNull()) return {};
-        // Save to disk cache for instant loading next time
         ThumbCache::save(path, tw, th, 0, 0, thumb);
         return thumb;
     });
@@ -1216,7 +1220,15 @@ void MainWindow::onGalleryAdd()
                      : QString("All files (*)");
     QStringList paths = QFileDialog::getOpenFileNames(this, title, smartBrowseDir(), filter);
     if (paths.isEmpty()) return;
-    ConfigManager::instance().addToGallery(paths);
+    QList<GalleryItem> added = ConfigManager::instance().addToGallery(paths);
+    // Pre-create compressed copies in background
+    for (const GalleryItem &item : added) {
+        if (!item.isVideo) {
+            (void)QtConcurrent::run([path = item.path]() {
+                ImageCache::ensureCompressed(path);
+            });
+        }
+    }
     refreshGallery();
 }
 
@@ -1224,6 +1236,7 @@ void MainWindow::onGalleryRemove(const QString &path)
 {
     // Evict from cache when item is deleted
     m_thumbCache.remove(path);
+    ImageCache::removeCompressed(path);
     ConfigManager::instance().removeFromGallery(path);
     refreshGallery();
     if (!m_lockScreenMode && m_pending.contains(m_currentMonitor) &&

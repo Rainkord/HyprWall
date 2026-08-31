@@ -1,5 +1,6 @@
 #include "ConfigManager.h"
 #include "WallpaperApplier.h"
+#include "ImageCache.h"
 #include <QSettings>
 #include <QStandardPaths>
 #include <QDir>
@@ -286,6 +287,8 @@ void ConfigManager::writeHyprlockConf()
         const WallpaperConfig &cfg = m_hyprlockConfigs[mon];
         if (cfg.filePath.isEmpty()) continue;
 
+        QString imgPath = ImageCache::getCompressedOrOriginal(cfg.filePath);
+
         newBlocks += QString(
             "background {\n"
             "    monitor = %1\n"
@@ -296,7 +299,7 @@ void ConfigManager::writeHyprlockConf()
             "    vibrancy = 0.1696\n"
             "    vibrancy_darkness = 0.0\n"
             "}\n\n"
-        ).arg(mon, cfg.filePath);
+        ).arg(mon, imgPath);
     }
 
     // Insert new background blocks after the first comment section header or at top
