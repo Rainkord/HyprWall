@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="assets/screenshot.png" width="600" alt="HyprWall Screenshot" style="border-radius:12px; box-shadow: 0 4px 24px rgba(0,0,0,0.5);">
-
 # HyprWall
 
 **A graphical wallpaper manager for [Hyprland](https://hyprland.org)**
@@ -10,6 +8,8 @@ Static, video, and GIF wallpapers with lock screen sync and slideshow support
 
 [![License](https://img.shields.io/github/license/Rainkord/HyprWall?color=blue)](https://github.com/Rainkord/HyprWall/blob/main/LICENSE)
 [![AUR](https://img.shields.io/aur/version/hyprwall-git?label=AUR)](https://aur.archlinux.org/packages/hyprwall-git)
+
+<img src="assets/screenshot.png" width="600" alt="HyprWall Screenshot" style="border-radius:12px; box-shadow: 0 4px 24px rgba(0,0,0,0.5);">
 
 </div>
 
