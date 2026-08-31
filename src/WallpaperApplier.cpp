@@ -154,7 +154,9 @@ bool WallpaperApplier::apply(const WallpaperConfig &cfg)
         return QProcess::startDetached("mpvpaper", args);
     }
 
-    // Image: try IPC first
+    // Image: stop any running mpvpaper on this monitor first
+    stopVideo(cfg.monitorName);
+
     if (hyprpaperRunning()) {
         if (applyImageIpc(cfg)) return true;
         qDebug() << "IPC failed, restarting hyprpaper...";
@@ -176,6 +178,11 @@ void WallpaperApplier::applyAll(const QMap<QString, WallpaperConfig> &configs)
             hasImages = true;
 
     if (hasImages) {
+        // Stop mpvpaper on ALL monitors that are now getting images
+        for (auto it = configs.cbegin(); it != configs.cend(); ++it)
+            if (!it.value().filePath.isEmpty() && !isVideoFile(it.value().filePath))
+                stopVideo(it.key());
+
         writeHyprpaperConf(configs);
         if (!hyprpaperRunning()) {
             QProcess::startDetached("hyprpaper", {});
