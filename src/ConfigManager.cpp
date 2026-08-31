@@ -179,7 +179,7 @@ QList<GalleryItem> ConfigManager::loadGallery() const
         return m_galleryCache;
 
     const QStringList imageExts = {"jpg","jpeg","png","bmp","webp","tiff"};
-    const QStringList videoExts = {"mp4","mkv","avi","webm","mov","flv","wmv"};
+    const QStringList videoExts = {"mp4","mkv","avi","webm","mov","flv","wmv","gif"};
     d.setSorting(QDir::Time | QDir::Reversed);
     QStringList allExts;
     for (auto &e : imageExts) allExts << ("*." + e) << ("*." + e.toUpper());

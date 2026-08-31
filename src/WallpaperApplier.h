@@ -14,6 +14,7 @@ public:
     static void    stopVideo(const QString &monitor);
     static void    toggleAudio(const QString &monitor);
     static bool    isVideoFile(const QString &path);
+    static bool    isGifFile(const QString &path);
     static QString fillModeToHyprpaper(FillMode mode);
     static QString prepareRotatedImage(const QString &src, WallpaperRotation rot);
 };

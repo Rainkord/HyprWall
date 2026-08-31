@@ -186,16 +186,6 @@ void MainWindow::startEntranceAnimation()
     m_entranceAnim->setEasingCurve(QEasingCurve::OutCubic);
     m_entranceAnim->start(QAbstractAnimation::DeleteWhenStopped);
     connect(m_entranceAnim, &QPropertyAnimation::finished, this, [this]{ m_entranceDone = true; });
-
-    // Pulsing accent line animation
-    m_accentPhase = 0.f;
-    m_accentAnim = new QPropertyAnimation(this, "accentPhase", this);
-    m_accentAnim->setDuration(2000);
-    m_accentAnim->setStartValue(0.f);
-    m_accentAnim->setEndValue(6.2832f); // 2*PI
-    m_accentAnim->setLoopCount(-1); // infinite
-    m_accentAnim->setEasingCurve(QEasingCurve::Linear);
-    m_accentAnim->start();
 }
 
 void MainWindow::animateSectionShow(QWidget *w)
@@ -256,31 +246,6 @@ void MainWindow::paintEvent(QPaintEvent *)
     p.setPen(QPen(QColor(48, 54, 61, 40), 1));
     p.setBrush(Qt::NoBrush);
     p.drawRoundedRect(rect().adjusted(1,1,-1,-1), 14, 14);
-
-    // Animated accent line — pulsing glow
-    float t = std::sin(m_accentPhase) * 0.5f + 0.5f; // 0..1
-    int alpha = (int)(60 + t * 80); // 60..140
-    int lineW = (int)(width() * (0.3f + t * 0.15f)); // 30%..45% width
-    int x = (width() - lineW) / 2;
-
-    // Glow layer (wider, dimmer)
-    QRadialGradient glowGrad(x + lineW/2, 1, lineW/2);
-    glowGrad.setColorAt(0.0, QColor(88, 166, 255, alpha/3));
-    glowGrad.setColorAt(1.0, QColor(88, 166, 255, 0));
-    p.setBrush(glowGrad);
-    p.setPen(Qt::NoPen);
-    p.drawEllipse(QRect(x - 10, -8, lineW + 20, 20));
-
-    // Core line
-    QLinearGradient lineGrad(x, 0, x + lineW, 0);
-    float center = t;
-    lineGrad.setColorAt(0.0, QColor(56, 139, 253, 0));
-    lineGrad.setColorAt(qMax(0.0, center - 0.3), QColor(88, 166, 255, alpha));
-    lineGrad.setColorAt(center, QColor(121, 192, 255, alpha + 30));
-    lineGrad.setColorAt(qMin(1.0, center + 0.3), QColor(88, 166, 255, alpha));
-    lineGrad.setColorAt(1.0, QColor(56, 139, 253, 0));
-    p.setBrush(lineGrad);
-    p.drawRoundedRect(QRect(x, 0, lineW, 2), 1, 1);
 }
 
 void MainWindow::mousePressEvent(QMouseEvent *e)
@@ -359,6 +324,18 @@ void MainWindow::buildUi()
         QLabel *title = new QLabel("HyprWall");
         title->setStyleSheet("font-size:18px;font-weight:700;color:#e6edf3;letter-spacing:0.5px;");
         tb->addWidget(title); tb->addStretch();
+
+        QPushButton *infoBtn = new QPushButton("\u2139");
+        infoBtn->setFixedSize(28,28);
+        infoBtn->setToolTip(m_isRU ? "О приложении" : "About");
+        infoBtn->setStyleSheet(
+            "QPushButton{background:transparent;border:none;"
+            "border-radius:14px;color:#6e7681;font-size:14px;"
+            "min-height:28px;max-height:28px;}"
+            "QPushButton:hover{background:rgba(88,166,255,60);color:#58a6ff;}");
+        connect(infoBtn, &QPushButton::clicked, this, &MainWindow::showAboutDialog);
+        tb->addWidget(infoBtn);
+        tb->addSpacing(4);
 
         QPushButton *closeBtn = new QPushButton("\u2715");
         closeBtn->setFixedSize(28,28);
@@ -774,7 +751,7 @@ void MainWindow::refreshGallery()
         wi->setSizeHint(QSize(m_gridW, m_gridH));
         wi->setFlags(Qt::ItemIsEnabled);
 
-        if (item.isVideo) {
+        if (item.isVideo && !WallpaperApplier::isGifFile(item.path)) {
             // Video placeholder — build synchronously (trivial cost)
             QPixmap vp(m_thumbW, m_thumbH);
             vp.fill(QColor(16, 10, 30));
@@ -881,7 +858,7 @@ void MainWindow::applyAndSaveCurrent()
 
         // Sync hyprlock if same wallpaper mode (only images, not videos)
         if (m_sameWallpaper && !cfg.filePath.isEmpty() &&
-            !WallpaperApplier::isVideoFile(cfg.filePath)) {
+            (!WallpaperApplier::isVideoFile(cfg.filePath) || WallpaperApplier::isGifFile(cfg.filePath))) {
             WallpaperConfig hlCfg;
             hlCfg.monitorName = m_currentMonitor;
             hlCfg.filePath = cfg.filePath;
@@ -897,8 +874,10 @@ void MainWindow::applyAndSaveCurrent()
             stopSlideshowForMonitor(m_currentMonitor);
             if (!cfg.filePath.isEmpty())
                 WallpaperApplier::apply(cfg);
-            bool vid = WallpaperApplier::isVideoFile(cfg.filePath);
-            m_monitorBar->setMonitorMode(m_currentMonitor, vid?1:0, vid?QString():cfg.filePath,
+            bool gif = !cfg.filePath.isEmpty() && WallpaperApplier::isGifFile(cfg.filePath);
+            bool vid = !gif && WallpaperApplier::isVideoFile(cfg.filePath);
+            m_monitorBar->setMonitorMode(m_currentMonitor, gif?0:(vid?1:0),
+                                         gif ? cfg.filePath : (vid ? QString() : cfg.filePath),
                                          static_cast<int>(cfg.fillMode), static_cast<int>(cfg.rotation));
         }
     }
@@ -1037,8 +1016,10 @@ void MainWindow::loadMonitors()
             startSlideshowForMonitor(m.name);
             m_monitorBar->setMonitorMode(m.name, 2, {});
         } else if (!cfg.filePath.isEmpty()) {
-            bool vid = WallpaperApplier::isVideoFile(cfg.filePath);
-            m_monitorBar->setMonitorMode(m.name, vid?1:0, vid?QString():cfg.filePath,
+            bool gif = !cfg.filePath.isEmpty() && WallpaperApplier::isGifFile(cfg.filePath);
+            bool vid = !gif && WallpaperApplier::isVideoFile(cfg.filePath);
+            m_monitorBar->setMonitorMode(m.name, gif?0:(vid?1:0),
+                                         gif ? cfg.filePath : (vid ? QString() : cfg.filePath),
                                          static_cast<int>(cfg.fillMode), static_cast<int>(cfg.rotation));
         }
     }
@@ -1132,9 +1113,12 @@ void MainWindow::populateSettings(const QString &monitorName)
         m_monitorBar->setMonitorMode(monitorName, 0,
                                      cfg.filePath.isEmpty() ? QString() : cfg.filePath,
                                      0, 0);
-    else
-        m_monitorBar->setMonitorMode(monitorName, isVid?1:0, isVid?QString():cfg.filePath,
+    else {
+        bool gif = !cfg.filePath.isEmpty() && WallpaperApplier::isGifFile(cfg.filePath);
+        m_monitorBar->setMonitorMode(monitorName, gif?0:(isVid?1:0),
+                                     gif ? cfg.filePath : (isVid ? QString() : cfg.filePath),
                                      static_cast<int>(cfg.fillMode), static_cast<int>(cfg.rotation));
+    }
 
     m_updatingControls = false;
 }
@@ -1200,9 +1184,10 @@ void MainWindow::onApplyAll()
         if (ss.enabled) {
             m_monitorBar->setMonitorMode(mon, 2, {});
         } else {
-            bool vid = WallpaperApplier::isVideoFile(it.value().filePath);
-            m_monitorBar->setMonitorMode(mon, vid?1:0,
-                                         vid?QString():it.value().filePath,
+            bool gif = !it.value().filePath.isEmpty() && WallpaperApplier::isGifFile(it.value().filePath);
+            bool vid = !gif && WallpaperApplier::isVideoFile(it.value().filePath);
+            m_monitorBar->setMonitorMode(mon, gif?0:(vid?1:0),
+                                         gif ? it.value().filePath : (vid ? QString() : it.value().filePath),
                                          static_cast<int>(it.value().fillMode),
                                          static_cast<int>(it.value().rotation));
         }
@@ -1223,7 +1208,7 @@ void MainWindow::onGalleryAdd()
     QList<GalleryItem> added = ConfigManager::instance().addToGallery(paths);
     // Pre-create compressed copies in background
     for (const GalleryItem &item : added) {
-        if (!item.isVideo) {
+        if (!item.isVideo || WallpaperApplier::isGifFile(item.path)) {
             (void)QtConcurrent::run([path = item.path]() {
                 ImageCache::ensureCompressed(path);
             });
@@ -1257,7 +1242,8 @@ void MainWindow::onGalleryItemClicked(const QString &path, bool isVideo)
 
     if (m_lockScreenMode) {
         // Lock screen mode — set hyprlock background
-        if (isVideo) return; // Lock screen only supports images
+        if (isVideo && !WallpaperApplier::isGifFile(path)) return; // Lock screen doesn't support video (GIF uses first-frame JPEG)
+        if (WallpaperApplier::isGifFile(path)) ImageCache::ensureCompressed(path);
         WallpaperConfig cfg;
         cfg.monitorName = m_currentMonitor;
         cfg.filePath = path;
@@ -1277,6 +1263,7 @@ void MainWindow::onGalleryItemClicked(const QString &path, bool isVideo)
     }
     m_pending[m_currentMonitor].filePath = path;
     switchToVideo(isVideo);
+    bool gif = WallpaperApplier::isGifFile(path);
     bool ssOn = m_ssState.value(m_currentMonitor).enabled;
     if (!ssOn) {
         if (isVideo) {
@@ -1293,14 +1280,14 @@ void MainWindow::onGalleryItemClicked(const QString &path, bool isVideo)
     }
     // When slideshow is on, item clicks don't change the bar indicator
     if (!ssOn)
-        m_monitorBar->setMonitorMode(m_currentMonitor, isVideo?1:0,
-                                     isVideo?QString():path,
+        m_monitorBar->setMonitorMode(m_currentMonitor, gif?0:(isVideo?1:0),
+                                     gif ? path : (isVideo ? QString() : path),
                                      static_cast<int>(m_pending[m_currentMonitor].fillMode),
                                      static_cast<int>(m_pending[m_currentMonitor].rotation));
     applyAndSaveCurrent();
 
     // Sync hyprlock if same wallpaper mode
-    if (m_sameWallpaper && !isVideo) {
+    if (m_sameWallpaper && (!isVideo || WallpaperApplier::isGifFile(path))) {
         WallpaperConfig hlCfg;
         hlCfg.monitorName = m_currentMonitor;
         hlCfg.filePath = path;
@@ -1431,7 +1418,7 @@ void MainWindow::syncSameWallpaper()
         hlCfg.monitorName = it.key();
         // Only sync image files (hyprlock doesn't support video)
         if (!it.value().filePath.isEmpty() &&
-            !WallpaperApplier::isVideoFile(it.value().filePath)) {
+            (!WallpaperApplier::isVideoFile(it.value().filePath) || WallpaperApplier::isGifFile(it.value().filePath))) {
             hlCfg.filePath = it.value().filePath;
         }
         m_hyprlockPending[it.key()] = hlCfg;
@@ -1464,4 +1451,115 @@ void MainWindow::closeEvent(QCloseEvent *ev)
     ConfigManager::instance().saveLanguage(m_isRU ? 1 : 0);
     ConfigManager::instance().saveSameWallpaper(m_sameWallpaper);
     QMainWindow::closeEvent(ev);
+}
+
+void MainWindow::showAboutDialog()
+{
+    QDialog *dlg = new QDialog(this);
+    dlg->setWindowTitle(m_isRU ? "О приложении" : "About");
+    dlg->setFixedSize(460, 520);
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    dlg->setStyleSheet(
+        "QDialog{background:#0d1117;color:#c9d1d9;}"
+        "QLabel{color:#c9d1d9;}"
+    );
+
+    QVBoxLayout *lay = new QVBoxLayout(dlg);
+    lay->setSpacing(10);
+    lay->setContentsMargins(24, 20, 24, 16);
+
+    // Title
+    QLabel *nameLbl = new QLabel("<h2 style='color:#e6edf3;margin:0;'>HyprWall</h2>");
+    nameLbl->setTextFormat(Qt::RichText);
+    nameLbl->setAlignment(Qt::AlignCenter);
+    lay->addWidget(nameLbl);
+
+    // Version
+    QLabel *verLbl = new QLabel("v0.7.0");
+    verLbl->setAlignment(Qt::AlignCenter);
+    verLbl->setStyleSheet("color:#8b949e;font-size:11px;");
+    lay->addWidget(verLbl);
+
+    lay->addSpacing(4);
+
+    // Description
+    auto addSection = [&](const QString &title, const QString &text) {
+        QLabel *t = new QLabel(QString("<b style='color:#58a6ff;'>%1</b>").arg(title));
+        t->setTextFormat(Qt::RichText);
+        lay->addWidget(t);
+        QLabel *c = new QLabel(text);
+        c->setTextFormat(Qt::RichText);
+        c->setWordWrap(true);
+        c->setStyleSheet("color:#8b949e;font-size:12px;line-height:1.4;");
+        lay->addWidget(c);
+    };
+
+    if (m_isRU) {
+        addSection("\u0427\u0442\u043e \u044d\u0442\u043e?",
+            "\u0413\u0440\u0430\u0444\u0438\u0447\u0435\u0441\u043a\u0438\u0439 \u043c\u0435\u043d\u0435\u0434\u0436\u0435\u0440 \u043e\u0431\u043e\u0435\u0432 \u0434\u043b\u044f <b>Hyprland</b>. "
+            "\u041f\u043e\u0437\u0432\u043e\u043b\u044f\u0435\u0442 \u043d\u0430\u0441\u0442\u0440\u0430\u0438\u0432\u0430\u0442\u044c \u043e\u0431\u043e\u0438 \u043d\u0430 \u0440\u0430\u0431\u043e\u0447\u0435\u043c \u0441\u0442\u043e\u043b\u0435 \u0438 \u044d\u043a\u0440\u0430\u043d\u0435 \u0431\u043b\u043e\u043a\u0438\u0440\u043e\u0432\u043a\u0438, "
+            "\u0443\u043f\u0440\u0430\u0432\u043b\u044f\u0442\u044c \u0441\u043b\u0430\u0439\u0434-\u0448\u043e\u0443\u0430\u043c\u0438 \u0438 \u0433\u0430\u043b\u0435\u0440\u0435\u0435\u0439.");
+
+        addSection("\u0422\u0435\u0445\u043d\u043e\u043b\u043e\u0433\u0438\u0438:",
+            "\u2022 <b>C++20 / Qt6</b> \u2014 \u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441 \u0438 \u043b\u043e\u0433\u0438\u043a\u0430<br>"
+            "\u2022 <b>hyprpaper</b> \u2014 \u0443\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0430 \u0441\u0442\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u0438\u0445 \u043e\u0431\u043e\u0435\u0432<br>"
+            "\u2022 <b>mpvpaper</b> \u2014 \u0432\u0438\u0434\u0435\u043e \u0438 GIF \u043e\u0431\u043e\u0438<br>"
+            "\u2022 <b>Wayland</b> (wlroots) \u2014 \u043f\u0440\u043e\u0442\u043e\u043a\u043e\u043b \u0434\u0438\u0441\u043f\u043b\u0435\u044f<br>"
+            "\u2022 <b>hyprlock</b> \u2014 \u0443\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0438\u0435 \u044d\u043a\u0440\u0430\u043d\u043e\u043c \u0431\u043b\u043e\u043a\u0438\u0440\u043e\u0432\u043a\u0438");
+
+        addSection("\u0412\u043e\u0437\u043c\u043e\u0436\u043d\u043e\u0441\u0442\u0438:",
+            "\u2022 \u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0430 \u043e\u0431\u043e\u0435\u0432 \u043d\u0430 \u043a\u0430\u0436\u0434\u043e\u043c \u043c\u043e\u043d\u0438\u0442\u043e\u0440\u0435<br>"
+            "\u2022 \u0412\u0438\u0434\u0435\u043e \u0438 GIF \u043e\u0431\u043e\u0438 (mpvpaper)<br>"
+            "\u2022 \u0421\u043b\u0430\u0439\u0434-\u0448\u043e\u0443 \u0441 \u043d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0430\u043c\u0438<br>"
+            "\u2022 \u0421\u0438\u043d\u0445\u0440\u043e\u043d\u0438\u0437\u0430\u0446\u0438\u044f \u0441 \u044d\u043a\u0440\u0430\u043d\u043e\u043c \u0431\u043b\u043e\u043a\u0438\u0440\u043e\u0432\u043a\u0438 (hyprlock)<br>"
+            "\u2022 \u0413\u0430\u043b\u0435\u0440\u0435\u044f \u0441 \u043f\u0440\u0435\u0434\u043f\u0440\u043e\u0441\u043c\u043e\u0442\u0440\u043e\u043c<br>"
+            "\u2022 \u0410\u0432\u0442\u043e\u0437\u0430\u043f\u0443\u0441\u043a \u043f\u0440\u0438 \u0432\u0445\u043e\u0434\u0435<br>"
+            "\u2022 \u0410\u043d\u0433\u043b\u0438\u0439\u0441\u043a\u0438\u0439 / \u0420\u0443\u0441\u0441\u043a\u0438\u0439 \u044f\u0437\u044b\u043a");
+    } else {
+        addSection("What is this?",
+            "A graphical wallpaper manager for <b>Hyprland</b>. "
+            "Set wallpapers on your desktop and lock screen, manage slideshows and gallery.");
+
+        addSection("Built with:",
+            "\u2022 <b>C++20 / Qt6</b> \u2014 UI and logic<br>"
+            "\u2022 <b>hyprpaper</b> \u2014 static image wallpapers<br>"
+            "\u2022 <b>mpvpaper</b> \u2014 video and GIF wallpapers<br>"
+            "\u2022 <b>Wayland</b> (wlroots) \u2014 display protocol<br>"
+            "\u2022 <b>hyprlock</b> \u2014 lock screen management");
+
+        addSection("Features:",
+            "\u2022 Per-monitor wallpaper configuration<br>"
+            "\u2022 Video and GIF wallpapers (mpvpaper)<br>"
+            "\u2022 Slideshow with custom intervals<br>"
+            "\u2022 Lock screen sync (hyprlock)<br>"
+            "\u2022 Gallery with thumbnail previews<br>"
+            "\u2022 Autostart on login<br>"
+            "\u2022 English / Russian localization");
+    }
+
+    lay->addSpacing(6);
+
+    // Links
+    QLabel *linksLbl = new QLabel(
+        QString("<a href='https://github.com/Rainkord/HyprWall' style='color:#58a6ff;'>GitHub</a>"
+                "&nbsp;&nbsp;|&nbsp;&nbsp;"
+                "<a href='https://aur.archlinux.org/packages/hyprwall-git' style='color:#58a6ff;'>AUR</a>"));
+    linksLbl->setTextFormat(Qt::RichText);
+    linksLbl->setOpenExternalLinks(true);
+    linksLbl->setAlignment(Qt::AlignCenter);
+    lay->addWidget(linksLbl);
+
+    lay->addStretch();
+
+    // Close button
+    QPushButton *okBtn = new QPushButton("OK");
+    okBtn->setFixedWidth(80);
+    okBtn->setStyleSheet(
+        "QPushButton{background:#21262d;color:#c9d1d9;border:1px solid #30363d;"
+        "border-radius:6px;padding:6px 12px;font-weight:600;}"
+        "QPushButton:hover{background:#30363d;}");
+    connect(okBtn, &QPushButton::clicked, dlg, &QDialog::accept);
+    lay->addWidget(okBtn, 0, Qt::AlignCenter);
+
+    dlg->exec();
 }

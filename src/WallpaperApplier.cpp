@@ -14,12 +14,17 @@
 #include <QRandomGenerator>
 
 static const QStringList VIDEO_EXTS = {
-    "mp4","mkv","avi","webm","mov","flv","wmv"
+    "mp4","mkv","avi","webm","mov","flv","wmv","gif"
 };
 
 bool WallpaperApplier::isVideoFile(const QString &path)
 {
     return VIDEO_EXTS.contains(QFileInfo(path).suffix().toLower());
+}
+
+bool WallpaperApplier::isGifFile(const QString &path)
+{
+    return QFileInfo(path).suffix().toLower() == "gif";
 }
 
 QString WallpaperApplier::fillModeToHyprpaper(FillMode mode)

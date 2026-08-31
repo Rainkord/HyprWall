@@ -31,7 +31,6 @@ struct MonitorSlideshowState {
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
-    Q_PROPERTY(float accentPhase READ accentPhase WRITE setAccentPhase)
     Q_PROPERTY(float windowOpacity READ windowOpacity WRITE setWindowOpacity)
 public:
     explicit MainWindow(QWidget *parent = nullptr);
@@ -41,9 +40,6 @@ public:
     void onGalleryItemClicked(const QString &path, bool isVideo);
 
     static const int INTERVAL_VALUES[6];
-
-    float accentPhase() const { return m_accentPhase; }
-    void setAccentPhase(float p) { m_accentPhase = p; update(); }
 
 protected:
     void paintEvent(QPaintEvent *) override;
@@ -65,6 +61,7 @@ private slots:
     void onGalleryAdd();
     void switchTab(int tab);
     void onSameWallpaperToggled(bool checked);
+    void showAboutDialog();
 
 private:
     void buildUi();
@@ -120,8 +117,6 @@ private:
     QFileSystemWatcher *m_galleryWatcher = nullptr;
 
     // Animations
-    float m_accentPhase = 0.f;
-    QPropertyAnimation *m_accentAnim   = nullptr;
     QPropertyAnimation *m_entranceAnim = nullptr;
     bool m_entranceDone = false;
 
