@@ -21,6 +21,7 @@ class MonitorBar;
 class ToggleSwitch;
 class QFileSystemWatcher;
 class QFrame;
+class GalleryDelegate;
 
 struct MonitorSlideshowState {
     bool    enabled      = false;
@@ -82,6 +83,8 @@ private:
     void animateSectionHide(QWidget *w);
     void startEntranceAnimation();
     void syncSameWallpaper();
+    void setAnchorRow(int row);
+    void moveAnchor(int deltaRow, int deltaCol);
 
     // Per-monitor slideshow
     MonitorSlideshowState &slideshowState(const QString &monitor);
@@ -165,7 +168,11 @@ private:
     QGroupBox    *m_galleryGroup     = nullptr;
     QPushButton  *m_galleryAddBtn    = nullptr;
     QListWidget  *m_galleryList      = nullptr;
+    GalleryDelegate *m_galleryDelegate = nullptr;
     QLabel       *m_galleryEmptyLbl  = nullptr;
+
+    // Anchor row — circular glow for current monitor's wallpaper
+    int           m_anchorRow        = -1;
 
     // Audio / video
     QWidget      *m_audioRow         = nullptr;

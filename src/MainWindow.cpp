@@ -235,6 +235,14 @@ void MainWindow::showEvent(QShowEvent *ev)
 {
     QMainWindow::showEvent(ev);
     if (!m_entranceDone) startEntranceAnimation();
+    // Ensure gallery gets keyboard focus so WASD/arrows work immediately
+    if (m_galleryList) {
+        QTimer::singleShot(0, this, [this]{
+            m_galleryList->setFocus();
+            if (m_anchorRow < 0 && m_galleryList->count() > 0)
+                setAnchorRow(0);
+        });
+    }
 }
 
 void MainWindow::paintEvent(QPaintEvent *)
@@ -284,6 +292,37 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *ev)
             }
         }
         return true;
+    }
+    if (obj == m_galleryList && ev->type() == QEvent::KeyPress) {
+        auto *ke = static_cast<QKeyEvent*>(ev);
+        int key = ke->key();
+
+        if (key == Qt::Key_Delete || key == Qt::Key_Backspace) {
+            QListWidgetItem *it = m_galleryList->currentItem();
+            if (it) {
+                bool locked = it->data(Qt::UserRole + 2).toBool();
+                if (!locked)
+                    onGalleryRemove(it->data(Qt::UserRole).toString());
+            }
+            return true;
+        }
+        if (key == Qt::Key_Return || key == Qt::Key_Enter) {
+            QListWidgetItem *it = m_galleryList->item(m_anchorRow);
+            if (it) {
+                bool locked = it->data(Qt::UserRole + 2).toBool();
+                if (!locked) {
+                    onGalleryItemClicked(
+                        it->data(Qt::UserRole).toString(),
+                        it->data(Qt::UserRole + 1).toBool());
+                }
+            }
+            return true;
+        }
+        // WASD + Arrow keys — move anchor
+        if (key == Qt::Key_W || key == Qt::Key_Up)    { moveAnchor(-1, 0);  return true; }
+        if (key == Qt::Key_S || key == Qt::Key_Down)   { moveAnchor(1, 0);   return true; }
+        if (key == Qt::Key_A || key == Qt::Key_Left)   { moveAnchor(0, -1);  return true; }
+        if (key == Qt::Key_D || key == Qt::Key_Right)  { moveAnchor(0, 1);   return true; }
     }
     return QMainWindow::eventFilter(obj, ev);
 }
@@ -644,9 +683,15 @@ void MainWindow::buildGalleryPanel(QVBoxLayout *parent)
     m_galleryList->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     m_galleryList->setMinimumHeight(m_gridH + 10);
     m_galleryList->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    m_galleryList->setItemDelegate(new GalleryDelegate(m_galleryList));
-    m_galleryList->setSelectionMode(QAbstractItemView::NoSelection);
+    m_galleryList->setItemDelegate(m_galleryDelegate = new GalleryDelegate(m_galleryList));
+    m_galleryList->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_galleryList->setFocusPolicy(Qt::StrongFocus);
     m_galleryList->viewport()->installEventFilter(this);
+    m_galleryList->installEventFilter(this);
+    connect(m_galleryList, &QListWidget::currentRowChanged, this, [this](int row) {
+        if (row < 0) return;
+        setAnchorRow(row);
+    });
     m_galleryList->viewport()->setObjectName("galleryViewport");
     m_galleryList->viewport()->setMouseTracking(true);
     m_galleryList->setMouseTracking(true);
@@ -778,6 +823,12 @@ void MainWindow::refreshGallery()
         }
 
         m_galleryList->addItem(wi);
+    }
+
+    // Set initial anchor to first item so arrows work immediately
+    if (m_anchorRow < 0 && m_galleryList->count() > 0) {
+        setAnchorRow(0);
+        m_galleryList->setFocus();
     }
 }
 
@@ -1030,6 +1081,47 @@ void MainWindow::loadMonitors()
         syncSameWallpaper();
 }
 
+void MainWindow::setAnchorRow(int row)
+{
+    if (row < 0 || row >= m_galleryList->count()) return;
+    m_anchorRow = row;
+    m_galleryDelegate->setAnchorRow(row);
+    // Select current item for keyboard focus tracking
+    m_galleryList->blockSignals(true);
+    m_galleryList->setCurrentRow(row);
+    for (int i = 0; i < m_galleryList->count(); ++i)
+        m_galleryList->item(i)->setSelected(i == row);
+    m_galleryList->blockSignals(false);
+    m_galleryList->scrollToItem(m_galleryList->item(row), QAbstractItemView::EnsureVisible);
+    m_galleryList->viewport()->update();
+}
+
+void MainWindow::moveAnchor(int deltaRow, int deltaCol)
+{
+    int count = m_galleryList->count();
+    if (count == 0) return;
+
+    if (m_anchorRow < 0) {
+        setAnchorRow(0);
+        return;
+    }
+
+    // Calculate columns from viewport width and grid width
+    int cols = qMax(1, m_galleryList->viewport()->width() / m_gridW);
+    int curRow = m_anchorRow;
+    int curCol = curRow % cols;
+    int curGridRow = curRow / cols;
+
+    int newCol = qBound(0, curCol + deltaCol, cols - 1);
+    int newGridRow = curGridRow + deltaRow;
+    int maxGridRow = (count - 1) / cols;
+    newGridRow = qBound(0, newGridRow, maxGridRow);
+
+    int newRow = newGridRow * cols + newCol;
+    if (newRow >= 0 && newRow < count)
+        setAnchorRow(newRow);
+}
+
 void MainWindow::onMonitorClicked(const QString &name)
 {
     auto it = std::find_if(m_monitors.cbegin(), m_monitors.cend(),
@@ -1038,6 +1130,28 @@ void MainWindow::onMonitorClicked(const QString &name)
     m_currentMonitor = name;
     m_monitorBar->setSelected(name);
     populateSettings(name);
+
+    // Return focus to gallery so WASD/arrows continue to work
+    if (m_galleryList) m_galleryList->setFocus();
+
+    // Set anchor to the wallpaper currently on this monitor
+    WallpaperConfig cfg;
+    if (m_lockScreenMode) {
+        cfg = m_hyprlockPending.contains(name) ? m_hyprlockPending[name]
+            : ConfigManager::instance().getHyprlockConfig(name);
+    } else {
+        cfg = m_pending.contains(name) ? m_pending[name]
+            : ConfigManager::instance().getConfig(name);
+    }
+    if (!cfg.filePath.isEmpty()) {
+        for (int i = 0; i < m_galleryList->count(); ++i) {
+            QListWidgetItem *wit = m_galleryList->item(i);
+            if (wit->data(Qt::UserRole).toString() == cfg.filePath) {
+                setAnchorRow(i);
+                return;
+            }
+        }
+    }
 }
 
 void MainWindow::populateSettings(const QString &monitorName)
@@ -1285,6 +1399,9 @@ void MainWindow::onGalleryItemClicked(const QString &path, bool isVideo)
                                      static_cast<int>(m_pending[m_currentMonitor].fillMode),
                                      static_cast<int>(m_pending[m_currentMonitor].rotation));
     applyAndSaveCurrent();
+
+    // Return focus to gallery so arrows/WASD keep working
+    if (m_galleryList) m_galleryList->setFocus();
 
     // Sync hyprlock if same wallpaper mode
     if (m_sameWallpaper && (!isVideo || WallpaperApplier::isGifFile(path))) {
